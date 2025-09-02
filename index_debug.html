@@ -3,88 +3,61 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>AR.js Debug – Box & GLB Test</title>
-  <!-- DE-KOMMENTAR: Bewährt-stabile Versionen für iOS -->
+  <title>AR.js – Marker-Test (HIRO)</title>
+  <!-- DE-KOMMENTAR: Bewährte Versionen für iOS -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/3.3.2/aframe/build/aframe-ar.js"></script>
   <style>
+    /* DE-KOMMENTAR: UI minimal – nur Statusleiste oben */
     html,body{margin:0;padding:0;background:#000}
-    #ui{position:fixed;bottom:0;left:0;right:0;display:flex;flex-wrap:wrap;gap:6px;
-        padding:8px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9;justify-content:center}
+    #msg{position:fixed;top:0;left:0;right:0;padding:6px 8px;background:rgba(0,0,0,.45);
+         color:#fff;font:14px/1.3 system-ui;z-index:9;text-align:center}
+    #ui{position:fixed;bottom:0;left:0;right:0;display:flex;gap:6px;justify-content:center;
+        padding:8px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9}
     #ui button{padding:6px 8px;border:0;border-radius:6px;background:#fff;color:#000;cursor:pointer}
-    #row{display:flex;gap:6px;width:100%;flex-wrap:wrap;justify-content:center}
-    #msg{position:fixed;top:0;left:0;right:0;padding:6px 8px;background:rgba(0,0,0,.45);color:#fff;
-         font:14px/1.3 system-ui;z-index:9;text-align:center}
   </style>
 </head>
 <body>
 <div id="msg">Status: lade…</div>
 <div id="ui">
-  <div id="row">
-    <button id="boxNoGPS">Box vor mir (ohne GPS)</button>
-    <button id="boxHere">Box hier (GPS)</button>
-    <button id="glbHere">GLB hier (GPS)</button>
-    <button id="reset">Reset</button>
-  </div>
+  <!-- DE-KOMMENTAR: Umschalten zwischen einfachem Würfel und GLB -->
+  <button id="showBox">Würfel</button>
+  <button id="showGLB">GLB</button>
 </div>
 
-<!-- DE-KOMMENTAR: AR.js Szene mit rückwärtiger Kamera -->
+<!-- DE-KOMMENTAR: Marker-basierte AR-Szene, keine GPS/Orientation nötig -->
 <a-scene
   embedded
   vr-mode-ui="enabled:false"
   renderer="alpha:true;antialias:false"
-  arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false;">
-  <!-- DE-KOMMENTAR: Kamera mit GPS-Tracking -->
-  <a-camera gps-new-camera="gpsMinDistance: 5"></a-camera>
-  <!-- DE-KOMMENTAR: Container für Test-Objekte -->
-  <a-entity id="holder"></a-entity>
+  arjs="sourceType: webcam; facingMode: environment; videoTexture: true; trackingMethod: best; debugUIEnabled: false;">
+  
+  <!-- DE-KOMMENTAR: Kamera (ohne GPS) -->
+  <a-entity camera></a-entity>
+
+  <!-- DE-KOMMENTAR: HIRO-Marker – alles, was hier drin ist, erscheint auf dem Marker -->
+  <a-marker type="pattern" preset="hiro" id="hiro">
+    <!-- DE-KOMMENTAR: Platzhalter – wird per JS gefüllt (Würfel oder GLB) -->
+    <a-entity id="holder"></a-entity>
+  </a-marker>
+
+  <!-- DE-KOMMENTAR: Wenn Marker nicht im Bild, zeigt AR.js standardmäßig nichts -->
+  <a-entity id="fallback"></a-entity>
 </a-scene>
 
 <script>
 // ===================== KONFIG =====================
-// DE-KOMMENTAR: Setze hier den Dateinamen deiner Test-GLB
-const TEST_GLB = 'test.glb'; // z.B. 'Box.glb' wenn du so hochgeladen hast
+// DE-KOMMENTAR: Dateiname deiner kleinen Test-GLB (z. B. 'Box.glb' oder 'test.glb')
+const TEST_GLB = 'test.glb'; // bei Bedarf anpassen
 // ==================================================
 
 const msg = (t)=>document.getElementById('msg').textContent = 'Status: ' + t;
 const holder = document.getElementById('holder');
 
-// DE-KOMMENTAR: Kamera-Diagnostik – meldet, ob das Videobild wirklich verbunden ist
-window.addEventListener('arjs-video-loaded', ()=> msg('Kamera OK – teste: „Box vor mir (ohne GPS)“.'));
+// DE-KOMMENTAR: Kamera-Diagnostik – meldet, ob das Videobild verbunden ist
+window.addEventListener('arjs-video-loaded', ()=> msg('Kamera OK – halte den HIRO-Marker in die Kamera.'));
 window.addEventListener('arjs-video-error', (e)=>{
   const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
   msg('Kamera-FEHLER: ' + name + ' – iOS: Einstellungen→Safari→Kamera = Zulassen.');
 });
-setTimeout(()=> {
-  const v = document.querySelector('video');
-  if (!v || !v.srcObject) {
-    msg('Kamera nicht verbunden – prüfe iOS Einstellungen (Kamera/Ortung/Bewegung & Ausrichtung), dann neu laden.');
-  }
-}, 3000);
-
-// DE-KOMMENTAR: Hilfsfunktion – löscht alle Test-Objekte
-function clearHolder(){ holder.innerHTML=''; }
-
-// DE-KOMMENTAR: 1) BOX VOR MIR (OHNE GPS) – sollte IMMER sichtbar sein (2 m vor Kamera)
-function addBoxNoGPS(){
-  clearHolder();
-  const box = document.createElement('a-box');
-  box.setAttribute('position','0 0 -2');   // 2 m vor der Kamera
-  box.setAttribute('width','0.5');
-  box.setAttribute('height','0.5');
-  box.setAttribute('depth','0.5');
-  box.setAttribute('color','#00FFFF');     // cyan
-  holder.appendChild(box);
-  msg('Box ohne GPS gesetzt (Position 0 0 -2). Wenn NICHT sichtbar → Rendering-Problem.');
-}
-
-// DE-KOMMENTAR: 2) BOX HIER (GPS) – setzt dieselbe Box per GPS an deine Position
-function addBoxHere(){
-  if (!navigator.geolocation) return msg('Browser hat keine Geolokation.');
-  msg('ermittle aktuelle Position…');
-  navigator.geolocation.getCurrentPosition(
-    p=>{
-      clearHolder();
-      const box = document.createElement('a-box');
-      box.setAttribute('gps-new-entity-place', `latitude:${p.coords.latitude}; longitude:${p.coords.longitude};`);
-      box.setAttribute('width','2'); box.setAttribute('height','2
+// DE-KOMMENTAR: S
