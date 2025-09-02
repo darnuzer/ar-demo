@@ -3,115 +3,59 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>AR.js – Marker-Test mit Start-Button</title>
-  <!-- DE: Bewährte Versionen, robust auf iOS -->
+  <title>AR.js – Minimaler HIRO-Test</title>
+  <!-- DE: Bewährte Versionen (iOS-freundlich) -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
-  <!-- DE: Alternative CDN statt raw.githack (manchmal blockiert) -->
+  <!-- DE: Alternative CDN; falls jsDelivr blockiert ist, nimm UNPKG (unten auskommentiert) -->
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.3.2/aframe/build/aframe-ar.js"></script>
+  <!-- <script src="https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js"></script> -->
   <style>
     html,body{margin:0;padding:0;background:#000}
-    #msg{position:fixed;top:0;left:0;right:0;padding:6px 8px;background:rgba(0,0,0,.45);
+    #msg{position:fixed;top:0;left:0;right:0;padding:8px;background:rgba(0,0,0,.5);
          color:#fff;font:14px/1.3 system-ui;z-index:9;text-align:center}
-    #ui{position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;
-        padding:10px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9}
-    #ui button{padding:8px 10px;border:0;border-radius:8px;background:#fff;color:#000;cursor:pointer}
   </style>
 </head>
 <body>
-<div id="msg">Status: Tippe „AR starten“, dann Kamera erlauben.</div>
-<div id="ui">
-  <button id="start">AR starten</button>
-  <button id="showBox" disabled>Würfel</button>
-  <button id="showGLB" disabled>GLB</button>
-</div>
+<div id="msg">Status: lade… Tippe ins Bild, erlaube Kamera. Halte den HIRO-Marker flach, gut beleuchtet, 30–60 cm Abstand.</div>
 
-<!-- DE: Container; Szene wird dynamisch eingefügt NACH User-Geste -->
-<div id="mount"></div>
+<!-- DE: Minimal-Szene. WICHTIG: a-marker-camera mit preset="hiro" -->
+<a-scene
+  embedded
+  vr-mode-ui="enabled:false"
+  renderer="alpha:true;antialias:false"
+  arjs="sourceType: webcam; facingMode: environment; videoTexture: true; trackingMethod: best; debugUIEnabled: false;">
+  
+  <!-- DE: 1 m Würfel direkt relativ zur Marker-Kamera (immer im Marker-Zentrum) -->
+  <a-box position="0 0.5 0" width="1" height="1" depth="1" color="#8A2BE2"></a-box>
+
+  <!-- DE: Marker-Kamera: ersetzt normale Kamera + Marker-Entity in einem Schritt -->
+  <a-marker-camera preset="hiro" id="mcam"></a-marker-camera>
+</a-scene>
 
 <script>
-// ===================== KONFIG =====================
-// DE: Kleine Test-GLB-Datei im Repo (z. B. 'test.glb' oder 'Box.glb')
-const TEST_GLB = 'test.glb'; // ggf. anpassen
-// ==================================================
+// DE: Statusanzeige
+const $ = (sel)=>document.querySelector(sel);
+const say = (t)=> $('#msg').textContent = 'Status: ' + t;
 
-const msg = (t)=>document.getElementById('msg').textContent = 'Status: ' + t;
-const mount = document.getElementById('mount');
+// DE: Kameradiagnostik
+window.addEventListener('arjs-video-loaded', ()=> say('Kamera OK – Marker wird gesucht…'));
+window.addEventListener('arjs-video-error',  (e)=>{
+  const n = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
+  say('Kamera-FEHLER: ' + n + ' – in iOS Safari Kamera zulassen.');
+});
 
-let holderEl = null; // DE: wird nach Szenen-Erzeugung gesetzt
+// DE: Marker-Events – sagen uns, ob AR.js den HIRO erkennt
+const mcam = document.getElementById('mcam');
+mcam.addEventListener('markerFound', ()=> say('Marker erkannt ✅ – Würfel sollte auf dem HIRO liegen.'));
+mcam.addEventListener('markerLost',  ()=> say('Marker verloren – bitte wieder auf den HIRO zielen.'));
 
-// DE: Szene erst NACH User-Geste (iOS Autoplay-Policy) erzeugen
-async function startAR(){
-  try{
-    msg('Kamera wird angefragt…');
-    // DE: Minimaler getUserMedia-Call als „Kick“, damit Safari die Erlaubnis gibt
-    const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
-    // DE: Tracks sofort stoppen – AR.js übernimmt später selbst
-    s.getTracks().forEach(t=>t.stop());
-
-    // DE: Szene-HTML dynamisch einsetzen (Marker-AR, kein GPS)
-    mount.innerHTML = `
-      <a-scene
-        embedded
-        vr-mode-ui="enabled:false"
-        renderer="alpha:true;antialias:false"
-        arjs="sourceType: webcam; facingMode: environment; videoTexture: true; trackingMethod: best; debugUIEnabled: false;">
-        <a-entity camera></a-entity>
-        <a-marker type="pattern" preset="hiro" id="hiro">
-          <a-entity id="holder"></a-entity>
-        </a-marker>
-        <a-entity id="fallback"></a-entity>
-      </a-scene>
-    `;
-
-    // DE: Nach dem Einfügen auf DOM-Elemente zugreifen
-    holderEl = document.getElementById('holder');
-
-    // DE: Kamera-Diagnostik – jetzt sollte das Event feuern
-    window.addEventListener('arjs-video-loaded', ()=> msg('Kamera OK – halte den HIRO-Marker ins Bild.'));
-    window.addEventListener('arjs-video-error', (e)=>{
-      const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
-      msg('Kamera-FEHLER: ' + name + ' – iOS: Einstellungen→Safari→Kamera = Zulassen.');
-    });
-
-    // DE: Buttons freischalten
-    document.getElementById('showBox').disabled = false;
-    document.getElementById('showGLB').disabled = false;
-
-    msg('Szene bereit – halte den HIRO-Marker ins Bild oder wähle Inhalt.');
-  }catch(e){
-    msg('Kamera verweigert: ' + (e && e.message ? e.message : e));
+// DE: Falls nach 3s kein Videostream, Hinweis geben
+setTimeout(()=>{
+  const v = document.querySelector('video');
+  if (!v || !v.srcObject) {
+    say('Kamera nicht verbunden. Safari: Einstellungen→Kamera ZULASSEN. Seite neu laden, ins Bild tippen.');
   }
-}
-
-// DE: Einfacher Würfel auf dem Marker
-function showBox(){
-  if(!holderEl){ return msg('Szene noch nicht bereit.'); }
-  holderEl.innerHTML = '';
-  const box = document.createElement('a-box');
-  box.setAttribute('position','0 0.5 0');   // 0.5 m Höhe, sitzt auf dem Marker
-  box.setAttribute('width','1'); box.setAttribute('height','1'); box.setAttribute('depth','1');
-  box.setAttribute('color','#8A2BE2');
-  holderEl.appendChild(box);
-  msg('Würfel aktiv – halte den HIRO-Marker ins Bild.');
-}
-
-// DE: Test-GLB auf dem Marker
-function showGLB(){
-  if(!holderEl){ return msg('Szene noch nicht bereit.'); }
-  holderEl.innerHTML = '';
-  const e = document.createElement('a-entity');
-  e.setAttribute('gltf-model', `url(${TEST_GLB})`);
-  e.setAttribute('rotation','0 0 0');
-  e.setAttribute('scale','50 50 50'); // DE: moderate Start-Skalierung
-  e.addEventListener('model-loaded', ()=> msg('GLB geladen – halte den HIRO-Marker ins Bild.'));
-  e.addEventListener('model-error', (er)=> msg('GLB-FEHLER: ' + (er && er.detail ? er.detail.src : 'unbekannt') + ' – Dateiname/Pfad prüfen.'));
-  holderEl.appendChild(e);
-}
-
-// DE: Buttons verbinden
-document.getElementById('start').onclick    = startAR;
-document.getElementById('showBox').onclick  = showBox;
-document.getElementById('showGLB').onclick  = showGLB;
+}, 3000);
 </script>
 </body>
 </html>
