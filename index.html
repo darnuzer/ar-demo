@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <title>AR.js – demo s doladěním</title>
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
+  <style>
+    body,html{margin:0;padding:0;}
+    #ui{position:fixed;inset:0 auto auto 0;right:0;display:flex;flex-wrap:wrap;gap:6px;
+        padding:8px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9}
+    #ui button{padding:6px 8px;border:0;border-radius:6px;background:#fff;color:#000;cursor:pointer}
+    #row{display:flex;gap:6px;width:100%;flex-wrap:wrap}
+    #msg{width:100%;opacity:.9}
+  </style>
+</head>
+<body>
+<div id="ui">
+  <div id="row">
+    <button id="placeHere">Umístit sem</button>
+    <button id="placeDavos">Umístit do Davosu</button>
+    <button id="reset">Reset</button>
+  </div>
+  <div id="row">
+    <button id="north">N +1 m</button>
+    <button id="south">S −1 m</button>
+    <button id="east">E +1 m</button>
+    <button id="west">W −1 m</button>
+  </div>
+  <div id="row">
+    <button id="rotL">↺ −1°</button>
+    <button id="rotR">↻ +1°</button>
+    <button id="scaleUp">Scale +10%</button>
+    <button id="scaleDown">Scale −10%</button>
+  </div>
+  <div id="msg">stav: start…</div>
+</div>
+
+<a-scene
+  renderer="colorManagement:true"
+  embedded
+  vr-mode-ui="enabled:false"
+  arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false">
+
+  <!-- kamera s GPS -->
+  <a-camera gps-new-camera="gpsMinDistance: 5"></a-camera>
+
+  <!-- sem se vkládá model -->
+  <a-entity id="holder"></a-entity>
+</a-scene>
+
+<script>
+/** ---- konfigurace ---- **/
+const MODEL_URL = 'building_lv95.glb';   // název tvého .glb souboru
+const STEP_M = 1;                          // krok posunu v metrech
+const START_SCALE = 50;                    // počáteční scale (větší = lépe vidět)
+const DAVOS = { lat: 46.801300, lon: 9.835500 }; // nahraď přesným WGS84 rohem budovy
+/** ---------------------- **/
+
+let state = {
+  lat: DAVOS.lat,
+  lon: DAVOS.lon,
+  rotY: 0,
+  scale: START_SCALE
+};
+
+const msg = (t)=>document.getElementById('msg').textContent = 'stav: ' + t;
+
+function metersToDegrees(dNorth_m, dEast_m, atLat_deg){
+  // přibližný převod metrů na stupně (funguje skvěle pro malé posuny)
+  const latRad = atLat_deg * Math.PI / 180;
+  const dLat = dNorth_m / 111320;                 // ~1° šířky ~111.32 km
+  const dLon = dEast_m / (111320 * Math.cos(latRad));
+  return { dLat, dLon };
+}
+
+function renderModel(){
+  const holder = document.getElementById('holder');
+  holder.innerHTML = '';
+  const e = document.createElement('a-entity');
+  e.setAttribute('gps-new-entity-place', `latitude: ${state.lat}; longitude: ${state.lon};`);
+  e.setAttribute('gltf-model', `url(${MODEL_URL})`);
+  e.setAttribute('rotation', `0 ${state.rotY} 0`);
+  e.setAttribute('scale', `${state.scale} ${state.scale} ${state.scale}`);
+
+  e.addEventListener('model-loaded', ()=>msg(
+    `model OK | lat:${state.lat.toFixed(6)}, lon:${state.lon.toFixed(6)}, rotY:${state.rotY}°, scale:${state.scale.toFixed(2)}`
+  ));
+  e.addEventListener('model-error', (er)=>msg('CHYBA modelu: ' + (er && er.detail ? er.detail.src : 'neznámá')));
+
+  holder.appendChild(e);
+}
+
+function placeHere(){
+  if (!navigator.geolocation) return msg('prohlížeč nemá geolokaci');
+  msg('zjišťuji aktuální polohu…');
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      state.lat = pos.coords.latitude;
+      state.lon = pos.coords.longitude;
+      renderModel();
+    },
+    err=>msg('GPS nedostupná: ' + err.message),
+    {enableHighAccuracy:true, timeout:15000, maximumAge:0}
+  );
+}
+
+function placeDavos(){
+  state.lat = DAVOS.lat;
+  state.lon = DAVOS.lon;
+  renderModel();
+}
+
+function nudge(dN_m, dE_m){
+  const { dLat, dLon } = metersToDegrees(dN_m, dE_m, state.lat);
+  state.lat += dLat;
+  state.lon += dLon;
+  renderModel();
+}
+
+document.getElementById('placeHere').onclick = placeHere;
+document.getElementById('placeDavos').onclick = placeDavos;
+document.getElementById('reset').onclick = ()=>{
+  state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE };
+  renderModel();
+};
+
+document.getElementById('north').onclick = ()=>nudge(+STEP_M, 0);
+document.getElementById('south').onclick = ()=>nudge(-STEP_M, 0);
+document.getElementById('east').onclick  = ()=>nudge(0, +STEP_M);
+document.getElementById('west').onclick  = ()=>nudge(0, -STEP_M);
+
+document.getElementById('rotL').onclick = ()=>{ state.rotY -= 1; renderModel(); };
+document.getElementById('rotR').onclick = ()=>{ state.rotY += 1; renderModel(); };
+
+document.getElementById('scaleUp').onclick   = ()=>{ state.scale *= 1.1; renderModel(); };
+document.getElementById('scaleDown').onclick = ()=>{ state.scale /= 1.1; renderModel(); };
+
+// první render (Davos)
+msg('povol prosím kameru a polohu. Tip: začni tlačítkem „Umístit sem“.');
+renderModel();
+</script>
+</body>
+</html>
