@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>AR.js – iOS-stabile Version</title>
-  <!-- Stabilní verze -->
+  <title>AR.js – Demo (mit Höhen-Offset)</title>
+  <!-- Stabilere Kombi für iOS -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/3.3.2/aframe/build/aframe-ar.js"></script>
   <style>
@@ -24,14 +24,17 @@
     <button id="reset">Zurücksetzen</button>
   </div>
   <div id="row">
-    <button id="north">N +5 m</button><button id="south">S −5 m</button>
-    <button id="east">O +5 m</button><button id="west">W −5 m</button>
+    <button id="north">N +10 m</button><button id="south">S −10 m</button>
+    <button id="east">O +10 m</button><button id="west">W −10 m</button>
   </div>
   <div id="row">
     <button id="rotL">↺ −1°</button><button id="rotR">↻ +1°</button>
     <button id="scaleUp">Größe +10%</button><button id="scaleDown">Größe −10%</button>
   </div>
-  <div id="msg">Status: Kamera/Standort zulassen. Tippe „Hier platzieren“.</div>
+  <div id="row">
+    <button id="zUp">Z +0.5 m</button><button id="zDown">Z −0.5 m</button>
+  </div>
+  <div id="msg">Status: Kamera/Standort zulassen. Tippe „Hier platzieren“ und nutze dann Z ±0.5 m.</div>
 </div>
 
 <a-scene
@@ -45,53 +48,64 @@
 
 <script>
 /** Konfiguration **/
-const MODEL_URL='building.glb';  // přejmenuj podle souboru
-const STEP_M=5, START_SCALE=200;
+const MODEL_URL='building.glb';      // <- případně změň podle názvu souboru
+const STEP_M=10;                      // větší krok pro rychlejší přisun
+const START_SCALE=400;                // větší default, ať je model hned vidět
 const DAVOS={lat:46.801300, lon:9.835500};
-/*******************/
+/************************************/
 
-let state={lat:DAVOS.lat, lon:DAVOS.lon, rotY:0, scale:START_SCALE};
+let state={lat:DAVOS.lat, lon:DAVOS.lon, rotY:0, scale:START_SCALE, z:0};
 const msg=t=>document.getElementById('msg').textContent='Status: '+t;
 
 /* Kamera diagnostika */
-window.addEventListener('arjs-video-loaded',()=>msg('Kamera OK – jetzt „Hier platzieren“.'));
+window.addEventListener('arjs-video-loaded',()=>msg('Kamera OK – „Hier platzieren“ tippen.'));
 window.addEventListener('arjs-video-error',e=>{
   const name=e&&e.detail&&e.detail.error?(e.detail.error.name||e.detail.error.message):'unbekannt';
   msg('Kamera-FEHLER: '+name+' – iOS: Einstellungen→Safari→Kamera = Zulassen.');
 });
-setTimeout(()=>{
-  const v=document.querySelector('video');
-  if(!v||!v.srcObject){
-    msg('Kamera nicht verbunden. Prüfe iOS-Einstellungen (Kamera/Ortung/Bewegung & Ausrichtung), lade Seite neu.');
-  }
-},3000);
+setTimeout(()=>{ const v=document.querySelector('video'); if(!v||!v.srcObject){ msg('Kamera nicht verbunden – prüfe iOS Einstellungen (Kamera/Ortung/Bewegung & Ausrichtung), neu laden.'); } },3000);
 
-/* Pomocné funkce */
+/* Užitečné přepočty */
 function metersToDegrees(dN,dE,lat){
   const r=lat*Math.PI/180; return {dLat:dN/111320, dLon:dE/(111320*Math.cos(r))};
 }
+
 let modelLoadTimeout=null;
 function renderModel(){
-  const holder=document.getElementById('holder'); holder.innerHTML='';
+  const holder=document.getElementById('holder');
+  holder.innerHTML='';
+
+  // rodič pro vertikální posun (A-Frame: osa Y = nahoru)
+  const parent=document.createElement('a-entity');
+  parent.setAttribute('position',`0 ${state.z||0} 0`);
+
   const e=document.createElement('a-entity');
   e.setAttribute('gps-new-entity-place',`latitude:${state.lat}; longitude:${state.lon};`);
   e.setAttribute('gltf-model',`url(${MODEL_URL})`);
   e.setAttribute('rotation',`0 ${state.rotY} 0`);
   e.setAttribute('scale',`${state.scale} ${state.scale} ${state.scale}`);
-  e.addEventListener('model-loaded',()=>{ clearTimeout(modelLoadTimeout); msg(`Modell geladen | Lat:${state.lat.toFixed(6)}, Lon:${state.lon.toFixed(6)}, RotY:${state.rotY}°, Größe:${state.scale.toFixed(0)}`); });
+
+  e.addEventListener('model-loaded',()=>{ clearTimeout(modelLoadTimeout);
+    msg(`Modell geladen | Lat:${state.lat.toFixed(6)}, Lon:${state.lon.toFixed(6)}, RotY:${state.rotY}°, Größe:${state.scale.toFixed(0)}, Z:${(state.z||0).toFixed(2)} m`);
+  });
   e.addEventListener('model-error',er=>msg('FEHLER beim Modell: '+(er&&er.detail?er.detail.src:'unbekannt')));
+
+  // Fallback: po 4 s ukaž diagnostickou krychli (ať víš, kde je „zem“)
   modelLoadTimeout=setTimeout(()=>{
     if(!e.object3D||!e.object3D.children.length){
-      holder.innerHTML='';
       const box=document.createElement('a-box');
       box.setAttribute('gps-new-entity-place',`latitude:${state.lat}; longitude:${state.lon};`);
-      box.setAttribute('depth','5'); box.setAttribute('height','5'); box.setAttribute('width','5');
-      box.setAttribute('color','#8A2BE2'); holder.appendChild(box);
-      msg('GLB nicht sichtbar – Diagnose-Box eingefügt (Kamera & GPS laufen).');
+      box.setAttribute('width','5'); box.setAttribute('height','5'); box.setAttribute('depth','5');
+      box.setAttribute('color','#8A2BE2');
+      parent.appendChild(box);
+      msg('GLB nicht sichtbar – Diagnose-Box eingefügt. Nutze Z ±0.5 m / Größe / N/S/O/W.');
     }
   },4000);
-  holder.appendChild(e);
+
+  parent.appendChild(e);
+  holder.appendChild(parent);
 }
+
 function placeHere(){
   if(!navigator.geolocation) return msg('Browser hat keine Geolokation');
   msg('ermittle aktuelle Position…');
@@ -107,18 +121,23 @@ function nudge(dN,dE){ const {dLat,dLon}=metersToDegrees(dN,dE,state.lat); state
 /* Ovládání */
 document.getElementById('placeHere').onclick=placeHere;
 document.getElementById('placeDavos').onclick=placeDavos;
-document.getElementById('reset').onclick=()=>{ state={lat:DAVOS.lat,lon:DAVOS.lon,rotY:0,scale:START_SCALE}; renderModel(); };
+document.getElementById('reset').onclick=()=>{ state={lat:DAVOS.lat,lon:DAVOS.lon,rotY:0,scale:START_SCALE,z:0}; renderModel(); };
+
 document.getElementById('north').onclick=()=>nudge(+STEP_M,0);
 document.getElementById('south').onclick=()=>nudge(-STEP_M,0);
 document.getElementById('east').onclick =()=>nudge(0,+STEP_M);
 document.getElementById('west').onclick =()=>nudge(0,-STEP_M);
+
 document.getElementById('rotL').onclick =()=>{ state.rotY-=1; renderModel(); };
 document.getElementById('rotR').onclick =()=>{ state.rotY+=1; renderModel(); };
+
 document.getElementById('scaleUp').onclick  =()=>{ state.scale*=1.1; renderModel(); };
 document.getElementById('scaleDown').onclick=()=>{ state.scale/=1.1; renderModel(); };
 
-msg('Kamera/Standort zulassen. Dann „Hier platzieren“ tippen.');
+document.getElementById('zUp').onclick   =()=>{ state.z=(state.z||0)+0.5; renderModel(); };
+document.getElementById('zDown').onclick =()=>{ state.z=(state.z||0)-0.5; renderModel(); };
+
+msg('Kamera/Standort zulassen. Dann „Hier platzieren“ – je-li nichts sichtbar: Größe erhöhen, Z +0.5 m, und N/S/O/W nutzen.');
 </script>
 </body>
 </html>
-
