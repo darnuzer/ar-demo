@@ -9,31 +9,23 @@
   <style>
     body,html{margin:0;padding:0;}
     #ui{
-      position:fixed;
-      bottom:0; left:0; right:0;
+      position:fixed; bottom:0; left:0; right:0;
       display:flex; flex-wrap:wrap; gap:6px;
-      padding:8px;
-      background:rgba(0,0,0,.45);
-      color:#fff;
-      font:14px/1.3 system-ui;
-      z-index:9;
-      justify-content:center;
+      padding:8px; background:rgba(0,0,0,.45); color:#fff;
+      font:14px/1.3 system-ui; z-index:9; justify-content:center;
     }
     #ui button{
-      padding:6px 8px;
-      border:0;
-      border-radius:6px;
-      background:#fff;
-      color:#000;
-      cursor:pointer;
+      padding:6px 8px; border:0; border-radius:6px;
+      background:#fff; color:#000; cursor:pointer;
     }
-    #row{display:flex;gap:6px;width:100%;flex-wrap:wrap;justify-content:center}
-    #msg{width:100%;opacity:.9;text-align:center;margin-top:4px}
+    #row{display:flex; gap:6px; width:100%; flex-wrap:wrap; justify-content:center}
+    #msg{width:100%; opacity:.9; text-align:center; margin-top:4px}
   </style>
 </head>
 <body>
 <div id="ui">
   <div id="row">
+    <button id="startCam">Kamera starten</button>
     <button id="placeHere">Hier platzieren</button>
     <button id="placeDavos">In Davos platzieren</button>
     <button id="reset">Zurücksetzen</button>
@@ -50,7 +42,7 @@
     <button id="scaleUp">Größe +10%</button>
     <button id="scaleDown">Größe −10%</button>
   </div>
-  <div id="msg">Status: Start…</div>
+  <div id="msg">Status: Bitte zuerst „Kamera starten“ tippen (iPhone).</div>
 </div>
 
 <a-scene
@@ -74,14 +66,28 @@ const START_SCALE = 50;                  // Anfangsgröße (größer = besser si
 const DAVOS = { lat: 46.801300, lon: 9.835500 }; // exakte WGS84-Koordinaten einsetzen
 /** ------------------------ **/
 
-let state = {
-  lat: DAVOS.lat,
-  lon: DAVOS.lon,
-  rotY: 0,
-  scale: START_SCALE
-};
+let state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE };
 
 const msg = (t)=>document.getElementById('msg').textContent = 'Status: ' + t;
+
+/* iOS: explizit Kamera-Recht per User-Gesture anfordern */
+async function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    msg('Kamera-API nicht verfügbar');
+    return;
+  }
+  try {
+    msg('Kamera wird angefragt…');
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } }, audio: false
+    });
+    // Tracks sofort stoppen – AR.js übernimmt den Kamera-Stream selbst
+    stream.getTracks().forEach(t => t.stop());
+    msg('Kamera erlaubt. Jetzt „Hier platzieren“ oder „In Davos platzieren“ tippen.');
+  } catch (e) {
+    msg('Kamera verweigert: ' + (e && e.message ? e.message : e));
+  }
+}
 
 function metersToDegrees(dNorth_m, dEast_m, atLat_deg){
   const latRad = atLat_deg * Math.PI / 180;
@@ -109,37 +115,26 @@ function renderModel(){
 
 function placeHere(){
   if (!navigator.geolocation) return msg('Browser hat keine Geolokation');
-  msg('ermittle aktuelle Position…');
+  msg('Aktuelle Position wird ermittelt…');
   navigator.geolocation.getCurrentPosition(
-    pos=>{
-      state.lat = pos.coords.latitude;
-      state.lon = pos.coords.longitude;
-      renderModel();
-    },
+    pos=>{ state.lat = pos.coords.latitude; state.lon = pos.coords.longitude; renderModel(); },
     err=>msg('GPS nicht verfügbar: ' + err.message),
     {enableHighAccuracy:true, timeout:15000, maximumAge:0}
   );
 }
 
-function placeDavos(){
-  state.lat = DAVOS.lat;
-  state.lon = DAVOS.lon;
-  renderModel();
-}
+function placeDavos(){ state.lat = DAVOS.lat; state.lon = DAVOS.lon; renderModel(); }
 
 function nudge(dN_m, dE_m){
   const { dLat, dLon } = metersToDegrees(dN_m, dE_m, state.lat);
-  state.lat += dLat;
-  state.lon += dLon;
-  renderModel();
+  state.lat += dLat; state.lon += dLon; renderModel();
 }
 
+/* Buttons */
+document.getElementById('startCam').onclick = startCamera;
 document.getElementById('placeHere').onclick = placeHere;
 document.getElementById('placeDavos').onclick = placeDavos;
-document.getElementById('reset').onclick = ()=>{
-  state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE };
-  renderModel();
-};
+document.getElementById('reset').onclick = ()=>{ state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE }; renderModel(); };
 
 document.getElementById('north').onclick = ()=>nudge(+STEP_M, 0);
 document.getElementById('south').onclick = ()=>nudge(-STEP_M, 0);
@@ -152,7 +147,7 @@ document.getElementById('rotR').onclick = ()=>{ state.rotY += 1; renderModel(); 
 document.getElementById('scaleUp').onclick   = ()=>{ state.scale *= 1.1; renderModel(); };
 document.getElementById('scaleDown').onclick = ()=>{ state.scale /= 1.1; renderModel(); };
 
-msg('Bitte Kamera und Standort zulassen. Tipp: Beginne mit „Hier platzieren“.');
+msg('Bitte zuerst „Kamera starten“ tippen (iPhone), danach „Hier platzieren“ oder „In Davos platzieren“.');
 renderModel();
 </script>
 </body>
