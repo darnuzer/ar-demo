@@ -3,23 +3,19 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>AR Building Viewer – GPS & Direkt</title>
+  <title>AR Building Viewer – Kamera-Hintergrund in Direktmodus</title>
 
-  <!-- DE: Bewährte, iOS-freundliche Versionen -->
+  <!-- DE: iOS-freundliche Versionen -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
-  <!-- DE: AR.js Location-Based (neuere Komponenten wie gps-new-camera) -->
   <script src="https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js"></script>
 
   <style>
-    body{margin:0;background:#000;font-family:Arial,system-ui}
-    #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:200}
-    #loading>div{background:rgba(0,0,0,.9);color:#fff;padding:24px 28px;border-radius:12px;text-align:center}
-
+    /* DE: Kein deckender Seiten-Hintergrund, damit das Canvas transparent sein kann */
+    html,body{margin:0;height:100%;background:transparent;font-family:Arial,system-ui}
     #controls{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.8);color:#fff;
       padding:15px;border-radius:8px;z-index:150;font-size:14px}
     .mode-btn{display:block;width:100%;margin:6px 0;padding:10px;background:#007bff;color:#fff;border:0;border-radius:6px;cursor:pointer}
     .mode-btn:hover{background:#0056b3}.mode-btn.active{background:#28a745}
-
     #info{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.8);color:#fff;padding:15px;border-radius:8px;z-index:120;font-size:14px;max-width:300px;line-height:1.4}
     #gps-info{position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.8);color:#fff;padding:10px;border-radius:6px;z-index:110;font-size:12px;max-width:280px}
     .status-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
@@ -28,22 +24,13 @@
   </style>
 </head>
 <body>
-  <!-- DE: Start/Status-Overlay -->
-  <div id="loading">
-    <div>
-      <h3 style="margin:0 0 8px">AR initialisieren</h3>
-      <p id="loading-text" style="margin:0 0 12px">Tippe auf „AR starten“, dann Kamera erlauben.</p>
-      <button id="btn-start" class="mode-btn" style="width:auto">AR starten</button>
-    </div>
-  </div>
 
-  <!-- DE: Steuerung (Moduswahl) -->
+  <!-- DE: Steuerung -->
   <div id="controls">
     <div style="margin-bottom:10px"><strong>Darstellungsmodus</strong></div>
     <button class="mode-btn" id="btn-direct">📱 Direkt vor mir</button>
     <button class="mode-btn" id="btn-gps">🌍 GPS-Koordinaten</button>
     <button class="mode-btn" id="btn-coordinates">📍 Koordinaten eingeben</button>
-    <!-- DE: Zusatztasten: Höhe +/− -->
     <button class="mode-btn" id="z-up">Z +0.5 m</button>
     <button class="mode-btn" id="z-down">Z −0.5 m</button>
   </div>
@@ -53,7 +40,7 @@
     <div><span id="status" class="status-indicator status-loading"></span>
       <strong id="mode-title">AR Building Viewer</strong>
     </div>
-    <div id="mode-description" style="margin-top:8px">Wähle einen Modus und starte AR.</div>
+    <div id="mode-description" style="margin-top:8px">Tippe auf „Direkt vor mir“ oder „GPS-Koordinaten“.</div>
     <div id="distance-info" style="margin-top:8px;font-size:12px;color:#aaa"></div>
   </div>
 
@@ -72,19 +59,18 @@
     <h3 style="margin-top:0">GPS-Koordinaten eingeben</h3>
     <div style="margin:12px 0">
       <label>Breite (Latitude):</label><br>
-      <input type="number" id="input-lat" step="any" placeholder="z. B. 46.8013" style="width:220px;padding:6px;margin-top:6px">
+      <input type="number" id="input-lat" step="any" placeholder="46.8013" style="width:220px;padding:6px;margin-top:6px">
     </div>
     <div style="margin:12px 0">
       <label>Länge (Longitude):</label><br>
-      <input type="number" id="input-lng" step="any" placeholder="z. B. 9.8355" style="width:220px;padding:6px;margin-top:6px">
+      <input type="number" id="input-lng" step="any" placeholder="9.8355" style="width:220px;padding:6px;margin-top:6px">
     </div>
     <button id="btn-apply" class="mode-btn" style="width:auto;background:#28a745">Übernehmen</button>
     <button id="btn-cancel" class="mode-btn" style="width:auto;background:#dc3545">Abbrechen</button>
   </div>
 
-  <!-- DE: Szene – wird nach Start sichtbar genutzt -->
+  <!-- DE: AR.js Szene – eine Kamera (gps-new-camera) liefert immer das Videobild -->
   <a-scene
-    id="scene"
     vr-mode-ui="enabled:false"
     arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false"
     renderer="alpha:true;antialias:true;precision:mediump"
@@ -93,141 +79,110 @@
 
     <!-- DE: Assets -->
     <a-assets>
-      <!-- DE: ACHTUNG Dateiname: glb (nicht gbl) -->
       <a-asset-item id="buildingModel" src="building.glb"></a-asset-item>
     </a-assets>
 
-    <!-- DE: Direktmodus – Modell fest 5 m vor Kamera (sichtbar erst nach Umschaltung) -->
-    <a-entity id="building-direct"
-      gltf-model="#buildingModel"
-      position="0 -1 -5"
-      scale="0.5 0.5 0.5"
-      rotation="0 0 0"
-      visible="false">
-      <a-text value="Meine Gebäude"
-              position="0 3 0" align="center" color="#fff" scale="2 2 2"
-              look-at="[camera]"></a-text>
+    <!-- DE: EINZIGE Kamera = gps-new-camera (liefert Videohintergrund) -->
+    <!-- DE: In den Direktmodus setzen wir das Modell als KIND dieser Kamera -->
+    <a-entity id="camRig" gps-new-camera="gpsMinDistance: 5">
+      <a-entity camera look-controls="enabled:true"></a-entity>
+
+      <!-- DE: Direktmodus – 5 m vor Kamera, Z-Offset per JS -->
+      <a-entity id="building-direct"
+        gltf-model="#buildingModel"
+        position="0 -1 -5"
+        scale="0.5 0.5 0.5"
+        rotation="0 0 0"
+        visible="false">
+        <a-text value="Meine Gebäude" position="0 3 0" align="center" color="#fff" scale="2 2 2" look-at="[camera]"></a-text>
+      </a-entity>
     </a-entity>
 
-    <!-- DE: GPS-Modus – Position per Lat/Lon (sichtbar erst nach Umschaltung) -->
+    <!-- DE: GPS-Modus – platzieren per Lat/Lon -->
     <a-entity id="building-gps"
       gps-new-entity-place="latitude: 46.8013; longitude: 9.8355"
       gltf-model="#buildingModel"
       scale="8 8 8"
       rotation="0 0 0"
       visible="false">
-      <a-text value="Davos Building"
-              position="0 12 0" align="center" color="#fff" scale="4 4 4"
-              look-at="[gps-new-camera]"></a-text>
+      <a-text value="Davos Building" position="0 12 0" align="center" color="#fff" scale="4 4 4" look-at="[gps-new-camera]"></a-text>
     </a-entity>
-
-    <!-- DE: Kamera für Direktmodus -->
-    <a-camera id="direct-camera"
-      wasd-controls="enabled:true"
-      look-controls="enabled:true"
-      visible="true"></a-camera>
-
-    <!-- DE: GPS-Kamera (neue Komponente) – anfangs verborgen -->
-    <a-camera id="gpsCam"
-      gps-new-camera="gpsMinDistance: 5"
-      wasd-controls="enabled:false"
-      look-controls="enabled:true"
-      visible="false"></a-camera>
   </a-scene>
 
   <script>
     /* ===================== KONFIG ===================== */
-    // DE: Datei des GLB (wenn anders benannt, hier anpassen)
-    const MODEL_URL = 'building.glb';
-    // DE: Anfangswerte
-    const START_COORD = { lat: 46.8013, lon: 9.8355 }; // Davos (Beispiel)
+    const START_COORD = { lat:46.8013, lon:9.8355 }; // DE: Davos (Beispiel)
     let state = {
-      mode: null,
+      mode:null,
       lat: START_COORD.lat, lon: START_COORD.lon,
-      z: 0,               // DE: Höhen-Offset in Metern (A-Frame Y-Achse)
-      scaleDirect: 0.5,   // DE: Direktmodus-Skalierung
-      scaleGPS: 8         // DE: GPS-Skalierung
+      z: 0,               // DE: Höhen-Offset (Meter; A-Frame Y)
+      scaleDirect: 0.5,
+      scaleGPS: 8
     };
     /* ================================================== */
 
-    // DE: UI/DOM Referenzen
     const $ = s => document.querySelector(s);
     const statusDot = $('#status');
     const modeTitle = $('#mode-title');
     const modeDesc  = $('#mode-description');
+    const gpsInfoBox= $('#gps-info');
+    const distInfo  = $('#distance-info');
 
     const buildingDirect = $('#building-direct');
     const buildingGPS    = $('#building-gps');
-    const directCam      = $('#direct-camera');
-    const gpsCam         = $('#gpsCam');
 
-    const gpsInfoBox     = $('#gps-info');
-    const distInfo       = $('#distance-info');
-
-    // DE: Start – Kamera erst nach User-Geste anfragen (iOS Policy)
-    $('#btn-start').onclick = async () => {
-      try{
-        $('#loading-text').textContent = 'Kamera wird angefragt …';
-        const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
-        s.getTracks().forEach(t=>t.stop()); // DE: sofort schließen – AR.js übernimmt danach
-        statusDot.className = 'status-indicator status-ready';
-        $('#loading').classList.add('hidden');
-        // DE: Standardmäßig Direktmodus wählen
-        switchMode('direct');
-        modeDesc.textContent = 'Tipp: Wechsle auf „GPS-Koordinaten“, um die Position zu testen.';
-      }catch(e){
-        statusDot.className = 'status-indicator status-error';
-        $('#loading-text').textContent = 'Kamera verweigert: ' + (e && e.message ? e.message : e);
-      }
-    };
+    // DE: Kamera-Events von AR.js – wenn das Videobild steht, wissen wir es
+    window.addEventListener('arjs-video-loaded', ()=> {
+      statusDot.className = 'status-indicator status-ready';
+      if(!state.mode){ modeDesc.textContent = 'Kamera OK – wähle „Direkt“ oder „GPS“.';
+      } else if(state.mode==='direct'){ modeDesc.textContent = 'Direktmodus aktiv. Videohintergrund sollte sichtbar sein.'; }
+    });
+    window.addEventListener('arjs-video-error', (e)=>{
+      const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
+      statusDot.className = 'status-indicator status-error';
+      modeDesc.textContent = 'Kamera-FEHLER: ' + name + ' (Safari-Rechte prüfen).';
+    });
 
     // DE: Moduswechsel
-    $('#btn-direct').onclick = () => switchMode('direct');
-    $('#btn-gps').onclick    = () => switchMode('gps');
+    $('#btn-direct').onclick = ()=> switchMode('direct');
+    $('#btn-gps').onclick    = ()=> switchMode('gps');
 
     function switchMode(mode){
       state.mode = mode;
-      // DE: Buttons aktivieren/markieren
       document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
       if(mode==='direct') $('#btn-direct').classList.add('active'); else $('#btn-gps').classList.add('active');
 
       if(mode==='direct'){
         modeTitle.textContent = 'Direkt-AR';
-        modeDesc.textContent  = 'Modell erscheint fix 5 m vor der Kamera (ohne GPS).';
-
-        // DE: Sichtbarkeit/Steuerung
+        modeDesc.textContent  = 'Modell 5 m vor der Kamera, Videohintergrund ist aktiv.';
         buildingDirect.setAttribute('visible', true);
         buildingGPS.setAttribute('visible', false);
-        directCam.setAttribute('visible', true);
-        gpsCam.setAttribute('visible', false);
-        gpsInfoBox.classList.add('hidden');
 
-        // DE: Z-Offset für Direktmodus anwenden
+        // DE: Z-Offset in Direktmodus anwenden (Y = -1 Basis + state.z)
         const p = buildingDirect.getAttribute('position') || {x:0,y:-1,z:-5};
         buildingDirect.setAttribute('position', { x:p.x, y:(-1 + state.z), z:p.z });
         buildingDirect.setAttribute('scale', `${state.scaleDirect} ${state.scaleDirect} ${state.scaleDirect}`);
 
+        gpsInfoBox.classList.add('hidden');
+
       }else{
         modeTitle.textContent = 'GPS-AR';
-        modeDesc.textContent  = 'Modell erscheint an den gegebenen GPS-Koordinaten.';
+        modeDesc.textContent  = 'Modell an GPS-Koordinaten. Videohintergrund ist aktiv.';
         buildingDirect.setAttribute('visible', false);
         buildingGPS.setAttribute('visible', true);
-        directCam.setAttribute('visible', false);
-        gpsCam.setAttribute('visible', true);
-        gpsInfoBox.classList.remove('hidden');
 
         // DE: Zielkoordinaten + Z-Offset setzen
         buildingGPS.setAttribute('gps-new-entity-place', `latitude: ${state.lat}; longitude: ${state.lon}`);
-        // DE: Z-Offset als lokaler Positions-Offset
         buildingGPS.setAttribute('position', `0 ${state.z} 0`);
         buildingGPS.setAttribute('scale', `${state.scaleGPS} ${state.scaleGPS} ${state.scaleGPS}`);
 
+        gpsInfoBox.classList.remove('hidden');
         updateGPSDisplay();
-        startGPSTrackingOnce(); // DE: nur initial „wecken“
+        startGPSTracking();
       }
     }
 
-    // DE: Z-Offset Tasten
+    // DE: Z-Offset Buttons
     $('#z-up').onclick   = ()=>{ state.z += 0.5; applyZ(); };
     $('#z-down').onclick = ()=>{ state.z -= 0.5; applyZ(); };
     function applyZ(){
@@ -240,12 +195,32 @@
       modeDesc.textContent = `Höhen-Offset Z = ${state.z.toFixed(2)} m`;
     }
 
-    // DE: GPS-Tracking (einmal anstoßen; watchPosition optional)
-    let gpsStarted = false;
-    function startGPSTrackingOnce(){
-      if(gpsStarted || !navigator.geolocation) return;
-      gpsStarted = true;
-      navigator.geolocation.getCurrentPosition(
+    // DE: Koordinaten-Dialog
+    $('#btn-coordinates').onclick = ()=>{
+      $('#coordinate-modal').style.display='block';
+      $('#input-lat').value = state.lat;
+      $('#input-lng').value = state.lon;
+    };
+    $('#btn-cancel').onclick = ()=> $('#coordinate-modal').style.display='none';
+    $('#btn-apply').onclick = ()=>{
+      const lat = parseFloat($('#input-lat').value);
+      const lon = parseFloat($('#input-lng').value);
+      if(Number.isNaN(lat)||Number.isNaN(lon)){ alert('Bitte gültige Koordinaten eingeben.'); return; }
+      state.lat=lat; state.lon=lon;
+      $('#coordinate-modal').style.display='none';
+      if(state.mode!=='gps') switchMode('gps');
+      else{
+        buildingGPS.setAttribute('gps-new-entity-place', `latitude: ${state.lat}; longitude: ${state.lon}`);
+        updateGPSDisplay();
+      }
+    };
+
+    // DE: GPS-Tracking / Anzeige
+    let watchId=null, currentPosition=null;
+    function startGPSTracking(){
+      if(!navigator.geolocation) return;
+      if(watchId!==null) return;
+      watchId = navigator.geolocation.watchPosition(
         pos=>{
           currentPosition = { lat: pos.coords.latitude, lon: pos.coords.longitude };
           updateGPSDisplay();
@@ -254,41 +229,9 @@
           statusDot.className = 'status-indicator status-error';
           distInfo.textContent = 'GPS nicht verfügbar: ' + err.message;
         },
-        { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
-      );
-      // DE: Optional: kontinuierliches Tracking einschalten
-      navigator.geolocation.watchPosition(
-        pos=>{
-          currentPosition = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          updateGPSDisplay();
-        },
-        ()=>{},
         { enableHighAccuracy:true, timeout:15000, maximumAge:30000 }
       );
     }
-
-    // DE: Koordinaten-Dialog
-    $('#btn-coordinates').onclick = ()=>{
-      $('#coordinate-modal').style.display = 'block';
-      $('#input-lat').value = state.lat;
-      $('#input-lng').value = state.lon;
-    };
-    $('#btn-cancel').onclick = ()=> $('#coordinate-modal').style.display = 'none';
-    $('#btn-apply').onclick = ()=> {
-      const lat = parseFloat($('#input-lat').value);
-      const lon = parseFloat($('#input-lng').value);
-      if(Number.isNaN(lat) || Number.isNaN(lon)){ alert('Bitte gültige Koordinaten eingeben.'); return; }
-      state.lat = lat; state.lon = lon;
-      $('#coordinate-modal').style.display = 'none';
-      if(state.mode!=='gps') switchMode('gps');
-      else {
-        buildingGPS.setAttribute('gps-new-entity-place', `latitude: ${state.lat}; longitude: ${state.lon}`);
-        updateGPSDisplay();
-      }
-    };
-
-    // DE: GPS-Anzeige + Entfernung
-    let currentPosition = null;
     function updateGPSDisplay(){
       if(currentPosition){
         $('#current-position').textContent = `Deine Position: ${currentPosition.lat.toFixed(6)}, ${currentPosition.lon.toFixed(6)}`;
@@ -297,44 +240,30 @@
       if(currentPosition){
         const d = haversine(currentPosition.lat, currentPosition.lon, state.lat, state.lon);
         $('#distance-display').textContent = `Entfernung: ${d.toFixed(0)} m`;
-        distInfo.textContent = `Entfernung: ${d.toFixed(0)} m`;
+        $('#distance-info').textContent   = `Entfernung: ${d.toFixed(0)} m`;
       }
     }
-
-    // DE: Haversine-Distanz (Meter)
-    function haversine(lat1, lon1, lat2, lon2){
-      const R=6371e3, toRad=x=>x*Math.PI/180;
-      const dφ = toRad(lat2-lat1), dλ = toRad(lon2-lon1);
-      const a = Math.sin(dφ/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dλ/2)**2;
-      return 2*R*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    function haversine(lat1,lon1,lat2,lon2){
+      const R=6371e3, toR=x=>x*Math.PI/180;
+      const dφ=toR(lat2-lat1), dλ=toR(lon2-lon1);
+      const a=Math.sin(dφ/2)**2 + Math.cos(toR(lat1))*Math.cos(toR(lat2))*Math.sin(dλ/2)**2;
+      return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
     }
 
-    // DE: Modell-Diagnostik
-    function hookModelEvents(){
-      [buildingDirect, buildingGPS].forEach(el=>{
-        el.addEventListener('model-loaded', ()=>{
-          statusDot.className = 'status-indicator status-ready';
-          modeDesc.textContent = 'Modell geladen. Falls unsichtbar: Größe/Z-Offset anpassen und umsehen.';
-        });
-        el.addEventListener('model-error', (e)=>{
-          statusDot.className = 'status-indicator status-error';
-          modeDesc.textContent = 'FEHLER: Konnte GLB nicht laden (Pfad/Name prüfen).';
-          console.error('GLB Fehler:', e);
-        });
+    // DE: Modell-Ladefeedback
+    [buildingDirect, buildingGPS].forEach(el=>{
+      el.addEventListener('model-loaded', ()=>{
+        statusDot.className='status-indicator status-ready';
       });
-    }
-    hookModelEvents();
+      el.addEventListener('model-error', e=>{
+        statusDot.className='status-indicator status-error';
+        console.error('GLB Fehler:', e);
+        modeDesc.textContent = 'FEHLER: GLB nicht geladen (Pfad/Name prüfen).';
+      });
+    });
 
-    // DE: Kamera-Diagnostik aus AR.js
-    window.addEventListener('arjs-video-loaded', ()=> {
-      statusDot.className = 'status-indicator status-ready';
-      if(state.mode==='gps') modeDesc.textContent = 'Kamera OK – GPS platzieren & ggf. Z/Größe justieren.';
-    });
-    window.addEventListener('arjs-video-error', (e)=>{
-      statusDot.className = 'status-indicator status-error';
-      const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
-      modeDesc.textContent = 'Kamera-FEHLER: ' + name + ' (Safari Rechte prüfen).';
-    });
+    // DE: Standard – Direktmodus wählen, damit man sofort die Kamera hinter dem Modell sieht
+    switchMode('direct');
   </script>
 </body>
 </html>
