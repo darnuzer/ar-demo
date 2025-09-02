@@ -50,7 +50,7 @@
   renderer="colorManagement:true; alpha:true; antialias:true; logarithmicDepthBuffer:true"
   embedded
   vr-mode-ui="enabled:false"
-  arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false">
+  arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false">
 
   <!-- Kamera mit GPS -->
   <a-camera gps-new-camera="gpsMinDistance: 5"></a-camera>
@@ -61,10 +61,10 @@
 
 <script>
 /** ---- Konfiguration ---- **/
-const MODEL_URL = 'building_lv95.glb';   // Name deiner .glb-Datei (gleiches Verzeichnis)
-const STEP_M = 5;                        // Schrittweite in Metern (größer für schnelleres Justieren)
-const START_SCALE = 200;                 // Anfangsgröße (groß, damit sichtbar)
-const DAVOS = { lat: 46.801300, lon: 9.835500 }; // Exakte WGS84-Koordinaten einsetzen
+const MODEL_URL  = 'building_lv95.glb';  // Name deiner .glb-Datei (gleiches Verzeichnis)
+const STEP_M     = 5;                    // Schrittweite in Metern
+const START_SCALE= 200;                  // Anfangsgröße (groß, damit sichtbar)
+const DAVOS      = { lat: 46.801300, lon: 9.835500 }; // exakte WGS84-Koordinaten einsetzen
 /** ------------------------ **/
 
 let state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE };
@@ -81,7 +81,7 @@ async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" } }, audio: false
     });
-    // Tracks sofort stoppen – AR.js übernimmt danach den Kamera-Stream
+    // AR.js übernimmt danach den Stream – hier sofort stoppen
     stream.getTracks().forEach(t => t.stop());
     msg('Kamera erlaubt. Jetzt „Sensoren aktivieren“.');
   } catch (e) {
@@ -89,7 +89,7 @@ async function startCamera() {
   }
 }
 
-/* iOS: Gyro/Kompass-Zustimmung erzwingen */
+/* iOS: Gyro/Kompass-Zustimmung anfordern */
 async function startSensors(){
   try {
     const needOri = typeof DeviceOrientationEvent !== 'undefined' &&
@@ -111,6 +111,24 @@ async function startSensors(){
   }
 }
 
+/* Diagnostika kamery z AR.js */
+window.addEventListener('arjs-video-loaded', () => {
+  msg('Kamera OK – jetzt „Hier platzieren“ oder „In Davos platzieren“.');
+});
+window.addEventListener('arjs-video-error', (e) => {
+  const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
+  msg('Kamera-FEHLER: ' + name + '. In iOS Einstellungen → Safari → Kamera = Zulassen.');
+});
+setTimeout(() => {
+  const v = document.querySelector('video');
+  if (!v || !v.srcObject) {
+    msg('Kamera nicht verbunden. Prüfe in iOS: Einstellungen → Safari → Kamera = Zulassen, ' +
+        'Datenschutz → Ortungsdienste → Safari Websites = Beim Verwenden + Präziser Standort = Ein, ' +
+        'Safari → Bewegung & Ausrichtung = Ein. Dann Seite neu laden und „Kamera starten“ tippen.');
+  }
+}, 3000);
+
+/* pomocné funkce */
 function metersToDegrees(dNorth_m, dEast_m, atLat_deg){
   const latRad = atLat_deg * Math.PI / 180;
   const dLat = dNorth_m / 111320;
@@ -135,7 +153,7 @@ function renderModel(){
   });
   e.addEventListener('model-error', (er)=>msg('FEHLER beim Modell: ' + (er && er.detail ? er.detail.src : 'unbekannt')));
 
-  // Fallback: wenn GLB in 4s nicht lädt, zeig eine Box (Diagnose)
+  // Fallback: wenn GLB in 4s nicht lädt, zeige Box (Diagnose)
   modelLoadTimeout = setTimeout(()=>{
     if (!e.object3D || !e.object3D.children.length){
       holder.innerHTML = '';
@@ -160,9 +178,7 @@ function placeHere(){
     {enableHighAccuracy:true, timeout:15000, maximumAge:0}
   );
 }
-
 function placeDavos(){ state.lat = DAVOS.lat; state.lon = DAVOS.lon; renderModel(); }
-
 function nudge(dN_m, dE_m){
   const { dLat, dLon } = metersToDegrees(dN_m, dE_m, state.lat);
   state.lat += dLat; state.lon += dLon; renderModel();
