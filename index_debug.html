@@ -3,143 +3,215 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>AR Diagnose – Loader & Marker</title>
-  <!-- DE: Zuerst NUR A-Frame laden (robust) -->
+  <title>AR.js – GPS-AR mit Start-Button (robust)</title>
+  <!-- DE: Bewährte, iOS-freundliche Versionen -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
-
-  <!-- DE: Wir versuchen AR.js über zwei CDNs. Wenn das erste scheitert, laden wir das zweite. -->
-  <script>
-  // DE: Helper zum Anzeigen von Statusmeldungen
-  function say(t){ var el = document.getElementById('msg'); if(el) el.textContent = 'Status: ' + t; }
-
-  // DE: Versuche zuerst jsDelivr; wenn Fehler → wechsele auf UNPKG
-  function loadARJS(){
-    return new Promise((resolve,reject)=>{
-      const s = document.createElement('script');
-      s.src = "https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.3.2/aframe/build/aframe-ar.js";
-      s.onload = ()=>resolve('jsDelivr OK');
-      s.onerror = ()=>{
-        say('Warnung: jsDelivr für AR.js blockiert – versuche UNPKG …');
-        const s2 = document.createElement('script');
-        s2.src = "https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js";
-        s2.onload = ()=>resolve('UNPKG OK');
-        s2.onerror = ()=>reject(new Error('AR.js konnte über beide CDNs nicht geladen werden.'));
-        document.head.appendChild(s2);
-      };
-      document.head.appendChild(s);
-    });
-  }
-
-  // DE: Prüfe, ob A-Frame da ist
-  window.addEventListener('load', ()=>{
-    if(!window.AFRAME){
-      say('FEHLER: A-Frame wurde nicht geladen (CSP/Netzwerk?).');
-    } else {
-      say('A-Frame geladen. Tippe „A-Frame Test starten“.');
-    }
-  });
-  </script>
-
+  <!-- DE: AR.js über UNPKG (Alternative zu jsDelivr) -->
+  <script src="https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js"></script>
   <style>
     html,body{margin:0;padding:0;background:#000}
     #msg{position:fixed;top:0;left:0;right:0;padding:8px;background:rgba(0,0,0,.5);
          color:#fff;font:14px/1.3 system-ui;z-index:9;text-align:center}
-    #ui{position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;
-        padding:10px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9}
+    #ui{position:fixed;bottom:0;left:0;right:0;display:flex;flex-wrap:wrap;gap:6px;
+        padding:10px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9;justify-content:center}
     #ui button{padding:8px 10px;border:0;border-radius:8px;background:#fff;color:#000;cursor:pointer}
-    #mount{min-height:100vh}
+    #row{display:flex;gap:6px;width:100%;flex-wrap:wrap;justify-content:center}
   </style>
 </head>
 <body>
-<div id="msg">Status: lade…</div>
+<div id="msg">Status: Tippe „AR starten“, erlaube Kamera & Standort.</div>
+
 <div id="ui">
-  <!-- DE: Schritt 1 – A-Frame ohne AR (soll IMMER einen Würfel zeigen) -->
-  <button id="btn-aframe">A-Frame Test starten</button>
-  <!-- DE: Schritt 2 – AR.js nachladen und Marker testen -->
-  <button id="btn-ar" disabled>AR.js laden & Marker testen</button>
+  <div id="row">
+    <button id="start">AR starten</button>
+    <button id="placeHere" disabled>Hier platzieren</button>
+    <button id="placeDavos" disabled>In Davos platzieren</button>
+    <button id="reset" disabled>Zurücksetzen</button>
+    <button id="toggleBox" disabled>Testbox statt GLB</button>
+  </div>
+  <div id="row">
+    <button id="north" disabled>N +10 m</button><button id="south" disabled>S −10 m</button>
+    <button id="east"  disabled>O +10 m</button><button id="west"  disabled>W −10 m</button>
+  </div>
+  <div id="row">
+    <button id="rotL" disabled>↺ −1°</button><button id="rotR" disabled>↻ +1°</button>
+    <button id="scaleUp" disabled>Größe +10%</button><button id="scaleDown" disabled>Größe −10%</button>
+  </div>
+  <div id="row">
+    <button id="zUp" disabled>Z +0.5 m</button><button id="zDown" disabled>Z −0.5 m</button>
+  </div>
 </div>
 
-<!-- DE: Hier wird die jeweilige Szene eingeblendet -->
+<!-- DE: Mount – Szene wird NACH dem Klick „AR starten“ dynamisch erzeugt -->
 <div id="mount"></div>
 
 <script>
-// DE: UI-Referenzen
+/* ===================== KONFIG ===================== */
+/* DE: Passe den Dateinamen deines GLB hier an (gleicher Ordner wie diese HTML) */
+const MODEL_URL = 'building.glb';     // z.B. 'building.glb' oder 'building_local_nocomp.glb'
+const STEP_M = 10;                    // Schrittweite N/S/O/W
+const START_SCALE = 400;              // Start-Skalierung (groß, damit sichtbar)
+const DAVOS = { lat: 46.801300, lon: 9.835500 };  // Beispielkoordinate
+/* ================================================== */
+
+let state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE, z: 0 };
+let useBox = false;       // DE: Toggle zwischen GLB und Test-Box
+let holder = null;        // DE: Container für aktuelles Objekt
+let camReady = false;     // DE: Wird true, wenn arjs-video-loaded feuert
+
+const msg = (t)=> document.getElementById('msg').textContent = 'Status: ' + t;
 const mount = document.getElementById('mount');
-const btnAF  = document.getElementById('btn-aframe');
-const btnAR  = document.getElementById('btn-ar');
 
-// DE: 1) A-Frame OHNE AR – zeigt Box 2 m vor der Kamera (kein AR-Video! Nur 3D Szene)
-btnAF.onclick = ()=>{
-  say('A-Frame Szene ohne AR wird erstellt …');
-  mount.innerHTML = `
-    <a-scene embedded renderer="alpha:true;antialias:true">
-      <!-- DE: Normale 3D-Kamera -->
-      <a-entity camera position="0 1.6 0"></a-entity>
-      <!-- DE: Lila Box 2 m vor der Kamera -->
-      <a-box position="0 1.6 -2" width="1" height="1" depth="1" color="#8A2BE2"></a-box>
-      <!-- DE: Umgebungslicht + Richtung -->
-      <a-entity light="type:ambient;intensity:0.8"></a-entity>
-      <a-entity light="type:directional;intensity:0.6" position="0 5 -5"></a-entity>
-      <!-- DE: Boden zur Orientierung -->
-      <a-plane rotation="-90 0 0" width="20" height="20" color="#333"></a-plane>
-      <a-sky color="#000"></a-sky>
-    </a-scene>
-  `;
-  say('Wenn du JETZT keinen Würfel siehst, rendert A-Frame nicht → Problem im Browser/Device.');
-  // DE: Wenn ok, erlaube Schritt 2
-  btnAR.disabled = false;
-};
+/* DE: Buttons bequem aktivieren/deaktivieren */
+function setControlsEnabled(on){
+  ['placeHere','placeDavos','reset','toggleBox',
+   'north','south','east','west','rotL','rotR','scaleUp','scaleDown','zUp','zDown'
+  ].forEach(id => document.getElementById(id).disabled = !on);
+}
 
-// DE: 2) AR.js Marker-Test (HIRO). Lädt AR.js NACH User-Geste und erzeugt dann eine Minimal-Szene.
-btnAR.onclick = async ()=>{
+/* DE: Meter → Grad (lokale Approximation, gut für kleine Offsets) */
+function metersToDegrees(dN, dE, lat){
+  const r = lat * Math.PI / 180;
+  return { dLat: dN/111320, dLon: dE/(111320*Math.cos(r)) };
+}
+
+/* DE: Szene nach User-Geste erstellen (um iOS-Autoplay-Policy sicher zu passieren) */
+async function startAR(){
   try{
-    say('Hole Kamerazustimmung …');
+    msg('Frage Kamera an …');
     const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'} }, audio:false });
-    s.getTracks().forEach(t=>t.stop()); // DE: sofort stoppen – AR.js nutzt später eigene Quelle
+    // DE: Tracks sofort stoppen – AR.js übernimmt später den Stream
+    s.getTracks().forEach(t=>t.stop());
   }catch(e){
-    return say('Kamera verweigert: ' + (e && e.message ? e.message : e));
+    return msg('Kamera verweigert: ' + (e && e.message ? e.message : e));
   }
 
-  say('Lade AR.js …');
-  try{
-    const info = await loadARJS();
-    say(info + ' – erstelle AR Marker-Szene …');
-  }catch(e){
-    return say('FEHLER: ' + e.message);
-  }
-
-  // DE: Marker-Szene erzeugen
+  // DE: GPS-Rechte werden beim ersten getCurrentPosition angefragt (bei „Hier platzieren“)
+  // DE: Jetzt Szene dynamisch erzeugen
   mount.innerHTML = `
     <a-scene
       embedded
       vr-mode-ui="enabled:false"
       renderer="alpha:true;antialias:false"
-      arjs="sourceType: webcam; facingMode: environment; videoTexture: true; trackingMethod: best; debugUIEnabled: false;">
-      <!-- DE: Würfel im Marker-Zentrum (1 m Kanten) -->
-      <a-box position="0 0.5 0" width="1" height="1" depth="1" color="#00FFFF"></a-box>
-      <!-- DE: Marker-Kamera für HIRO -->
-      <a-marker-camera preset="hiro" id="mcam"></a-marker-camera>
+      arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false;">
+      <!-- DE: GPS-Kamera -->
+      <a-camera gps-new-camera="gpsMinDistance: 5"></a-camera>
+      <!-- DE: Container für unser Modell/Box -->
+      <a-entity id="holder"></a-entity>
     </a-scene>
   `;
 
-  // DE: Diagnostik-Events
-  window.addEventListener('arjs-video-loaded', ()=> say('Kamera OK – Marker wird gesucht… (HIRO deutlich, 30–60 cm, gute Beleuchtung)'));
-  window.addEventListener('arjs-video-error',  (e)=>{
-    const n = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
-    say('Kamera-FEHLER: ' + n + ' – in iOS Safari Kamera zulassen.');
+  holder = document.getElementById('holder');
+
+  // DE: Kamera-Diagnostik
+  window.addEventListener('arjs-video-loaded', ()=>{
+    camReady = true;
+    msg('Kamera OK – tippe „Hier platzieren“ (oder „In Davos platzieren“).');
+    setControlsEnabled(true);
+  });
+  window.addEventListener('arjs-video-error', (e)=>{
+    const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
+    msg('Kamera-FEHLER: ' + name + ' – iOS Safari: Kamera zulassen.');
   });
 
-  // DE: Marker-Events
+  // DE: Falls nach 3s kein Video: Hinweis geben (Berechtigungen prüfen)
   setTimeout(()=>{
-    const mcam = document.getElementById('mcam');
-    if(!mcam){
-      say('FEHLER: Marker-Kamera nicht gefunden – AR.js DOM nicht erzeugt (CSP/CDN?).');
-      return;
+    const v = document.querySelector('video');
+    if (!v || !v.srcObject){
+      msg('Kamera nicht verbunden – iOS: Einstellungen→Safari→Kamera/Ortung/Bewegung & Ausrichtung prüfen, dann neu laden.');
     }
-    mcam.addEventListener('markerFound', ()=> say('Marker erkannt ✅ – Würfel sollte auf dem HIRO liegen.'));
-    mcam.addEventListener('markerLost',  ()=> say('Marker verloren – erneut ausrichten.'));
-  }, 100);
-};
+  }, 3000);
+
+  setControlsEnabled(false); // DE: bis Kamera bereit ist
+}
+
+/* DE: Modell/Box rendern an aktuelle state.lat/lon */
+function renderModel(){
+  if(!holder){ return msg('Szene noch nicht bereit – erst „AR starten“ tippen.'); }
+  holder.innerHTML = '';
+
+  // DE: Eltern-Entity für Höhenoffset (A-Frame: Y = nach oben)
+  const parent = document.createElement('a-entity');
+  parent.setAttribute('position', `0 ${state.z || 0} 0`);
+
+  if (useBox){
+    // DE: Testbox – hilft prüfen, ob Rendering/Position läuft, ohne GLB zu laden
+    const box = document.createElement('a-box');
+    box.setAttribute('gps-new-entity-place', `latitude:${state.lat}; longitude:${state.lon};`);
+    box.setAttribute('width','2'); box.setAttribute('height','2'); box.setAttribute('depth','2');
+    box.setAttribute('color','#00FFFF'); // cyan
+    parent.appendChild(box);
+    holder.appendChild(parent);
+    msg(`Testbox gesetzt | Lat:${state.lat.toFixed(6)}, Lon:${state.lon.toFixed(6)}, Z:${(state.z||0).toFixed(2)} m`);
+    return;
+  }
+
+  // DE: GLB-Entity
+  const e = document.createElement('a-entity');
+  e.setAttribute('gps-new-entity-place', `latitude:${state.lat}; longitude:${state.lon};`);
+  e.setAttribute('gltf-model', `url(${MODEL_URL}?v=${Date.now()})`); // DE: Cache-Buster gegen GitHub Pages Cache
+  e.setAttribute('rotation', `0 ${state.rotY} 0`);
+  e.setAttribute('scale', `${state.scale} ${state.scale} ${state.scale}`);
+
+  // DE: Events für Diagnose
+  e.addEventListener('model-loaded', ()=>{
+    msg(`Modell geladen | Lat:${state.lat.toFixed(6)}, Lon:${state.lon.toFixed(6)}, RotY:${state.rotY}°, Größe:${state.scale.toFixed(0)}, Z:${(state.z||0).toFixed(2)} m`);
+  });
+  e.addEventListener('model-error', (er)=>{
+    msg('GLB-FEHLER: ' + (er && er.detail ? er.detail.src : 'unbekannt') + ' – Dateiname/Pfad prüfen.');
+  });
+
+  parent.appendChild(e);
+  holder.appendChild(parent);
+
+  // DE: Fallback nach 4s – falls GLB nicht sichtbar, Testbox einblenden
+  setTimeout(()=>{
+    if (!e.object3D || !e.object3D.children.length){
+      holder.innerHTML='';
+      const fb = document.createElement('a-box');
+      fb.setAttribute('gps-new-entity-place', `latitude:${state.lat}; longitude:${state.lon};`);
+      fb.setAttribute('width','2'); fb.setAttribute('height','2'); fb.setAttribute('depth','2');
+      fb.setAttribute('color','#8A2BE2'); // violett
+      holder.appendChild(fb);
+      msg('GLB nicht sichtbar – Diagnose-Box eingefügt. Nutze Größe/Z/N/S/O/W.');
+    }
+  }, 4000);
+}
+
+/* DE: Positionierungsfunktionen */
+function placeHere(){
+  if(!navigator.geolocation) return msg('Browser hat keine Geolokation.');
+  if(!camReady) msg('Hinweis: Kamera noch nicht bestätigt – dennoch versuche GPS…');
+  msg('ermittle aktuelle Position…');
+  navigator.geolocation.getCurrentPosition(
+    p => { state.lat = p.coords.latitude; state.lon = p.coords.longitude; renderModel(); },
+    e => msg('GPS-Fehler: ' + e.message),
+    { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+  );
+}
+function placeDavos(){ state.lat = DAVOS.lat; state.lon = DAVOS.lon; renderModel(); }
+function nudge(dN,dE){ const { dLat, dLon } = metersToDegrees(dN,dE,state.lat); state.lat+=dLat; state.lon+=dLon; renderModel(); }
+
+/* DE: Buttons verbinden */
+document.getElementById('start').onclick      = startAR;
+document.getElementById('placeHere').onclick  = placeHere;
+document.getElementById('placeDavos').onclick = placeDavos;
+document.getElementById('reset').onclick      = ()=>{ state = { lat:DAVOS.lat, lon:DAVOS.lon, rotY:0, scale:START_SCALE, z:0 }; useBox=false; renderModel(); };
+document.getElementById('toggleBox').onclick  = ()=>{ useBox = !useBox; renderModel(); };
+
+document.getElementById('north').onclick = ()=> nudge(+STEP_M,0);
+document.getElementById('south').onclick = ()=> nudge(-STEP_M,0);
+document.getElementById('east').onclick  = ()=> nudge(0,+STEP_M);
+document.getElementById('west').onclick  = ()=> nudge(0,-STEP_M);
+
+document.getElementById('rotL').onclick  = ()=>{ state.rotY -= 1; renderModel(); };
+document.getElementById('rotR').onclick  = ()=>{ state.rotY += 1; renderModel(); };
+
+document.getElementById('scaleUp').onclick   = ()=>{ state.scale *= 1.1; renderModel(); };
+document.getElementById('scaleDown').onclick = ()=>{ state.scale /= 1.1; renderModel(); };
+
+document.getElementById('zUp').onclick   = ()=>{ state.z = (state.z||0) + 0.5; renderModel(); };
+document.getElementById('zDown').onclick = ()=>{ state.z = (state.z||0) - 0.5; renderModel(); };
 </script>
 </body>
 </html>
