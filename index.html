@@ -123,4 +123,34 @@ function placeHere(){
   if (!navigator.geolocation) return msg('Browser hat keine Geolokation');
   msg('Aktuelle Position wird ermittelt…');
   navigator.geolocation.getCurrentPosition(
-    po
+    pos=>{ state.lat = pos.coords.latitude; state.lon = pos.coords.longitude; renderModel(); },
+    err=>msg('GPS nicht verfügbar: ' + err.message),
+    {enableHighAccuracy:true, timeout:15000, maximumAge:0}
+  );
+}
+function placeDavos(){ state.lat = DAVOS.lat; state.lon = DAVOS.lon; renderModel(); }
+function nudge(dN_m, dE_m){
+  const { dLat, dLon } = metersToDegrees(dN_m, dE_m, state.lat);
+  state.lat += dLat; state.lon += dLon; renderModel();
+}
+
+/* Buttons */
+document.getElementById('placeHere').onclick = placeHere;
+document.getElementById('placeDavos').onclick = placeDavos;
+document.getElementById('reset').onclick = ()=>{ state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE }; renderModel(); };
+
+document.getElementById('north').onclick = ()=>nudge(+STEP_M, 0);
+document.getElementById('south').onclick = ()=>nudge(-STEP_M, 0);
+document.getElementById('east').onclick  = ()=>nudge(0, +STEP_M);
+document.getElementById('west').onclick  = ()=>nudge(0, -STEP_M);
+
+document.getElementById('rotL').onclick = ()=>{ state.rotY -= 1; renderModel(); };
+document.getElementById('rotR').onclick = ()=>{ state.rotY += 1; renderModel(); };
+
+document.getElementById('scaleUp').onclick   = ()=>{ state.scale *= 1.1; renderModel(); };
+document.getElementById('scaleDown').onclick = ()=>{ state.scale /= 1.1; renderModel(); };
+
+msg('Kamera/Standort zulassen. Dann „Hier platzieren“ oder „In Davos platzieren“ tippen.');
+</script>
+</body>
+</html>
