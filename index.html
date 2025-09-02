@@ -3,30 +3,21 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>AR.js – Demo mit Feinjustierung</title>
+  <title>AR.js – Demo (vereinfachte iOS-Version)</title>
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
   <style>
-    body,html{margin:0;padding:0;}
-    #ui{
-      position:fixed; bottom:0; left:0; right:0;
-      display:flex; flex-wrap:wrap; gap:6px;
-      padding:8px; background:rgba(0,0,0,.45); color:#fff;
-      font:14px/1.3 system-ui; z-index:9; justify-content:center;
-    }
-    #ui button{
-      padding:6px 8px; border:0; border-radius:6px;
-      background:#fff; color:#000; cursor:pointer;
-    }
-    #row{display:flex; gap:6px; width:100%; flex-wrap:wrap; justify-content:center}
-    #msg{width:100%; opacity:.9; text-align:center; margin-top:4px}
+    html,body{margin:0;padding:0;background:#000}
+    #ui{position:fixed;bottom:0;left:0;right:0;display:flex;flex-wrap:wrap;gap:6px;
+        padding:8px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9;justify-content:center}
+    #ui button{padding:6px 8px;border:0;border-radius:6px;background:#fff;color:#000;cursor:pointer}
+    #row{display:flex;gap:6px;width:100%;flex-wrap:wrap;justify-content:center}
+    #msg{width:100%;opacity:.9;text-align:center;margin-top:4px}
   </style>
 </head>
 <body>
 <div id="ui">
   <div id="row">
-    <button id="startCam">Kamera starten</button>
-    <button id="startSensors">Sensoren aktivieren</button>
     <button id="placeHere">Hier platzieren</button>
     <button id="placeDavos">In Davos platzieren</button>
     <button id="reset">Zurücksetzen</button>
@@ -43,88 +34,47 @@
     <button id="scaleUp">Größe +10%</button>
     <button id="scaleDown">Größe −10%</button>
   </div>
-  <div id="msg">Status: Bitte „Kamera starten“ (iPhone), dann „Sensoren aktivieren“.</div>
+  <div id="msg">Status: Kamera/Standort zulassen. Tippe „Hier platzieren“ für schnellen Test.</div>
 </div>
 
 <a-scene
-  renderer="colorManagement:true; alpha:true; antialias:true; logarithmicDepthBuffer:true"
+  renderer="colorManagement:true; alpha:true; antialias:false"
   embedded
   vr-mode-ui="enabled:false"
-  arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false">
+  arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false;">
 
   <!-- Kamera mit GPS -->
   <a-camera gps-new-camera="gpsMinDistance: 5"></a-camera>
 
-  <!-- Hier wird das Modell eingefügt -->
+  <!-- Ziel für Modell -->
   <a-entity id="holder"></a-entity>
 </a-scene>
 
 <script>
 /** ---- Konfiguration ---- **/
-const MODEL_URL  = 'building_lv95.glb';  // Name deiner .glb-Datei (gleiches Verzeichnis)
-const STEP_M     = 5;                    // Schrittweite in Metern
-const START_SCALE= 200;                  // Anfangsgröße (groß, damit sichtbar)
-const DAVOS      = { lat: 46.801300, lon: 9.835500 }; // exakte WGS84-Koordinaten einsetzen
+const MODEL_URL   = 'building_lv95.glb';  // ggf. anpassen
+const STEP_M      = 5;
+const START_SCALE = 200;
+const DAVOS       = { lat: 46.801300, lon: 9.835500 };
 /** ------------------------ **/
 
 let state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE };
 const msg = (t)=>document.getElementById('msg').textContent = 'Status: ' + t;
 
-/* iOS: Kamera-Recht per User-Gesture anfordern */
-async function startCamera() {
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      msg('Kamera-API nicht verfügbar');
-      return;
-    }
-    msg('Kamera wird angefragt…');
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } }, audio: false
-    });
-    // AR.js übernimmt danach den Stream – hier sofort stoppen
-    stream.getTracks().forEach(t => t.stop());
-    msg('Kamera erlaubt. Jetzt „Sensoren aktivieren“.');
-  } catch (e) {
-    msg('Kamera verweigert: ' + (e && e.message ? e.message : e));
-  }
-}
-
-/* iOS: Gyro/Kompass-Zustimmung anfordern */
-async function startSensors(){
-  try {
-    const needOri = typeof DeviceOrientationEvent !== 'undefined' &&
-                    typeof DeviceOrientationEvent.requestPermission === 'function';
-    const needMot = typeof DeviceMotionEvent !== 'undefined' &&
-                    typeof DeviceMotionEvent.requestPermission === 'function';
-
-    if (needOri) {
-      const r = await DeviceOrientationEvent.requestPermission();
-      if (r !== 'granted') return msg('Ausrichtungs-Sensor verweigert.');
-    }
-    if (needMot) {
-      const r2 = await DeviceMotionEvent.requestPermission();
-      if (r2 !== 'granted') return msg('Bewegungs-Sensor verweigert.');
-    }
-    msg('Sensoren aktiviert. Jetzt „Hier platzieren“ oder „In Davos platzieren“.');
-  } catch(e){
-    msg('Sensor-Fehler: ' + (e && e.message ? e.message : e));
-  }
-}
-
-/* Diagnostika kamery z AR.js */
-window.addEventListener('arjs-video-loaded', () => {
+/* Diagnostika kamery (AR.js) */
+window.addEventListener('arjs-video-loaded', ()=> {
   msg('Kamera OK – jetzt „Hier platzieren“ oder „In Davos platzieren“.');
 });
-window.addEventListener('arjs-video-error', (e) => {
+window.addEventListener('arjs-video-error', (e)=> {
   const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
   msg('Kamera-FEHLER: ' + name + '. In iOS Einstellungen → Safari → Kamera = Zulassen.');
 });
-setTimeout(() => {
+setTimeout(()=> {
   const v = document.querySelector('video');
   if (!v || !v.srcObject) {
-    msg('Kamera nicht verbunden. Prüfe in iOS: Einstellungen → Safari → Kamera = Zulassen, ' +
+    msg('Kamera nicht verbunden. iOS: Einstellungen → Safari → Kamera = Zulassen, ' +
         'Datenschutz → Ortungsdienste → Safari Websites = Beim Verwenden + Präziser Standort = Ein, ' +
-        'Safari → Bewegung & Ausrichtung = Ein. Dann Seite neu laden und „Kamera starten“ tippen.');
+        'Safari → Bewegung & Ausrichtung = Ein. Seite neu laden und dann „Hier platzieren“.');
   }
 }, 3000);
 
@@ -147,22 +97,22 @@ function renderModel(){
   e.setAttribute('rotation', `0 ${state.rotY} 0`);
   e.setAttribute('scale', `${state.scale} ${state.scale} ${state.scale}`);
 
-  e.addEventListener('model-loaded', ()=>{
+  e.addEventListener('model-loaded', ()=> {
     clearTimeout(modelLoadTimeout);
     msg(`Modell geladen | Lat:${state.lat.toFixed(6)}, Lon:${state.lon.toFixed(6)}, RotY:${state.rotY}°, Größe:${state.scale.toFixed(0)}`);
   });
-  e.addEventListener('model-error', (er)=>msg('FEHLER beim Modell: ' + (er && er.detail ? er.detail.src : 'unbekannt')));
+  e.addEventListener('model-error', (er)=> msg('FEHLER beim Modell: ' + (er && er.detail ? er.detail.src : 'unbekannt')));
 
-  // Fallback: wenn GLB in 4s nicht lädt, zeige Box (Diagnose)
-  modelLoadTimeout = setTimeout(()=>{
+  // Fallback: wenn GLB in 4s nicht lädt → zeige Box
+  modelLoadTimeout = setTimeout(()=> {
     if (!e.object3D || !e.object3D.children.length){
       holder.innerHTML = '';
       const box = document.createElement('a-box');
       box.setAttribute('gps-new-entity-place', `latitude: ${state.lat}; longitude: ${state.lon};`);
       box.setAttribute('depth','5'); box.setAttribute('height','5'); box.setAttribute('width','5');
-      box.setAttribute('color','#8A2BE2'); // purple
+      box.setAttribute('color','#8A2BE2');
       holder.appendChild(box);
-      msg('GLB noch nicht sichtbar – Diagnose-Box eingefügt. Wenn Box sichtbar ist, laufen Kamera & Sensoren.');
+      msg('GLB nicht sichtbar – Diagnose-Box eingefügt (Kamera & GPS laufen).');
     }
   }, 4000);
 
@@ -173,36 +123,4 @@ function placeHere(){
   if (!navigator.geolocation) return msg('Browser hat keine Geolokation');
   msg('Aktuelle Position wird ermittelt…');
   navigator.geolocation.getCurrentPosition(
-    pos=>{ state.lat = pos.coords.latitude; state.lon = pos.coords.longitude; renderModel(); },
-    err=>msg('GPS nicht verfügbar: ' + err.message),
-    {enableHighAccuracy:true, timeout:15000, maximumAge:0}
-  );
-}
-function placeDavos(){ state.lat = DAVOS.lat; state.lon = DAVOS.lon; renderModel(); }
-function nudge(dN_m, dE_m){
-  const { dLat, dLon } = metersToDegrees(dN_m, dE_m, state.lat);
-  state.lat += dLat; state.lon += dLon; renderModel();
-}
-
-/* Buttons */
-document.getElementById('startCam').onclick = startCamera;
-document.getElementById('startSensors').onclick = startSensors;
-document.getElementById('placeHere').onclick = placeHere;
-document.getElementById('placeDavos').onclick = placeDavos;
-document.getElementById('reset').onclick = ()=>{ state = { lat: DAVOS.lat, lon: DAVOS.lon, rotY: 0, scale: START_SCALE }; renderModel(); };
-
-document.getElementById('north').onclick = ()=>nudge(+STEP_M, 0);
-document.getElementById('south').onclick = ()=>nudge(-STEP_M, 0);
-document.getElementById('east').onclick  = ()=>nudge(0, +STEP_M);
-document.getElementById('west').onclick  = ()=>nudge(0, -STEP_M);
-
-document.getElementById('rotL').onclick = ()=>{ state.rotY -= 1; renderModel(); };
-document.getElementById('rotR').onclick = ()=>{ state.rotY += 1; renderModel(); };
-
-document.getElementById('scaleUp').onclick   = ()=>{ state.scale *= 1.1; renderModel(); };
-document.getElementById('scaleDown').onclick = ()=>{ state.scale /= 1.1; renderModel(); };
-
-msg('Bitte „Kamera starten“ und dann „Sensoren aktivieren“ tippen. Danach „Hier platzieren“ oder „In Davos platzieren“.');
-</script>
-</body>
-</html>
+    po
