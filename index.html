@@ -3,19 +3,27 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>AR Building Viewer – Kamera-Hintergrund in Direktmodus</title>
+  <title>AR Building Viewer – Kamera fix</title>
 
   <!-- DE: iOS-freundliche Versionen -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
   <script src="https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js"></script>
 
   <style>
-    /* DE: Kein deckender Seiten-Hintergrund, damit das Canvas transparent sein kann */
+    /* DE: Transparenter Seitenhintergrund + Canvas → Videobild ist sichtbar */
     html,body{margin:0;height:100%;background:transparent;font-family:Arial,system-ui}
+    /* DE: Szene anfangs verstecken, bis Kamera erlaubt wurde (verhindert "weißes" Canvas) */
+    a-scene{display:none}
+
+    #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);color:#fff;z-index:999}
+    #overlay .box{padding:24px 28px;border-radius:12px;text-align:center;max-width:480px}
+    .btn{display:inline-block;padding:10px 14px;border:0;border-radius:8px;background:#28a745;color:#fff;cursor:pointer;font-size:16px}
+
     #controls{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.8);color:#fff;
       padding:15px;border-radius:8px;z-index:150;font-size:14px}
     .mode-btn{display:block;width:100%;margin:6px 0;padding:10px;background:#007bff;color:#fff;border:0;border-radius:6px;cursor:pointer}
     .mode-btn:hover{background:#0056b3}.mode-btn.active{background:#28a745}
+
     #info{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.8);color:#fff;padding:15px;border-radius:8px;z-index:120;font-size:14px;max-width:300px;line-height:1.4}
     #gps-info{position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.8);color:#fff;padding:10px;border-radius:6px;z-index:110;font-size:12px;max-width:280px}
     .status-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
@@ -24,6 +32,16 @@
   </style>
 </head>
 <body>
+
+  <!-- DE: Start-Overlay (User-Geste für Kamera) -->
+  <div id="overlay">
+    <div class="box">
+      <h3 style="margin:0 0 10px">AR starten</h3>
+      <p style="margin:0 0 14px">Tippe auf „Kamera erlauben“. Safari fragt nach Kamera-Zugriff.</p>
+      <button id="btnStart" class="btn">Kamera erlauben</button>
+      <p id="ovlMsg" style="margin:10px 0 0;opacity:.8;font-size:13px"></p>
+    </div>
+  </div>
 
   <!-- DE: Steuerung -->
   <div id="controls">
@@ -40,7 +58,7 @@
     <div><span id="status" class="status-indicator status-loading"></span>
       <strong id="mode-title">AR Building Viewer</strong>
     </div>
-    <div id="mode-description" style="margin-top:8px">Tippe auf „Direkt vor mir“ oder „GPS-Koordinaten“.</div>
+    <div id="mode-description" style="margin-top:8px">Nach Freigabe sollte das Kamerabild zu sehen sein.</div>
     <div id="distance-info" style="margin-top:8px;font-size:12px;color:#aaa"></div>
   </div>
 
@@ -69,11 +87,12 @@
     <button id="btn-cancel" class="mode-btn" style="width:auto;background:#dc3545">Abbrechen</button>
   </div>
 
-  <!-- DE: AR.js Szene – eine Kamera (gps-new-camera) liefert immer das Videobild -->
+  <!-- DE: AR-Szene – wird erst NACH Kamera-Freigabe sichtbar -->
   <a-scene
+    id="scene"
     vr-mode-ui="enabled:false"
-    arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false"
     renderer="alpha:true;antialias:true;precision:mediump"
+    arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false"
     embedded
     style="width:100vw;height:100vh">
 
@@ -82,12 +101,11 @@
       <a-asset-item id="buildingModel" src="building.glb"></a-asset-item>
     </a-assets>
 
-    <!-- DE: EINZIGE Kamera = gps-new-camera (liefert Videohintergrund) -->
-    <!-- DE: In den Direktmodus setzen wir das Modell als KIND dieser Kamera -->
+    <!-- DE: Eine Kamera (gps-new-camera) → liefert Videohintergrund -->
     <a-entity id="camRig" gps-new-camera="gpsMinDistance: 5">
       <a-entity camera look-controls="enabled:true"></a-entity>
 
-      <!-- DE: Direktmodus – 5 m vor Kamera, Z-Offset per JS -->
+      <!-- DE: Direktmodus – 5 m vor der Kamera -->
       <a-entity id="building-direct"
         gltf-model="#buildingModel"
         position="0 -1 -5"
@@ -111,31 +129,38 @@
 
   <script>
     /* ===================== KONFIG ===================== */
-    const START_COORD = { lat:46.8013, lon:9.8355 }; // DE: Davos (Beispiel)
-    let state = {
-      mode:null,
-      lat: START_COORD.lat, lon: START_COORD.lon,
-      z: 0,               // DE: Höhen-Offset (Meter; A-Frame Y)
-      scaleDirect: 0.5,
-      scaleGPS: 8
-    };
+    const START_COORD = { lat:46.8013, lon:9.8355 }; // Davos Beispiel
+    let state = { mode:null, lat:START_COORD.lat, lon:START_COORD.lon, z:0, scaleDirect:0.5, scaleGPS:8 };
     /* ================================================== */
 
     const $ = s => document.querySelector(s);
-    const statusDot = $('#status');
-    const modeTitle = $('#mode-title');
-    const modeDesc  = $('#mode-description');
-    const gpsInfoBox= $('#gps-info');
-    const distInfo  = $('#distance-info');
+    const scene = $('#scene'), overlay = $('#overlay'), ovlMsg = $('#ovlMsg');
+    const statusDot = $('#status'), modeTitle = $('#mode-title'), modeDesc = $('#mode-description');
+    const gpsInfoBox = $('#gps-info'), distInfo = $('#distance-info');
+    const buildingDirect = $('#building-direct'), buildingGPS = $('#building-gps');
 
-    const buildingDirect = $('#building-direct');
-    const buildingGPS    = $('#building-gps');
+    // DE: Kamera "warm-up" – nach Klick Rechte anfragen, dann Szene anzeigen
+    $('#btnStart').onclick = async ()=>{
+      try{
+        ovlMsg.textContent = 'Kamera wird angefragt …';
+        const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
+        // DE: Tracks sofort schließen – AR.js bindet gleich sein eigenes <video> an
+        s.getTracks().forEach(t=>t.stop());
+        overlay.style.display = 'none';
+        scene.style.display = 'block'; // DE: jetzt darf A-Frame/AR.js initialisieren
+        statusDot.className = 'status-indicator status-ready';
+        modeDesc.textContent = 'Kamera OK – wähle „Direkt“ oder „GPS“.';
+        switchMode('direct'); // DE: direkt starten, damit man Video + Modell sieht
+      }catch(e){
+        ovlMsg.textContent = 'Kamera verweigert: ' + (e && e.message ? e.message : e);
+        statusDot.className = 'status-indicator status-error';
+      }
+    };
 
-    // DE: Kamera-Events von AR.js – wenn das Videobild steht, wissen wir es
+    // DE: Kamera-Diagnostik von AR.js (sollte kurz nach Freigabe feuern)
     window.addEventListener('arjs-video-loaded', ()=> {
       statusDot.className = 'status-indicator status-ready';
-      if(!state.mode){ modeDesc.textContent = 'Kamera OK – wähle „Direkt“ oder „GPS“.';
-      } else if(state.mode==='direct'){ modeDesc.textContent = 'Direktmodus aktiv. Videohintergrund sollte sichtbar sein.'; }
+      if(!state.mode) modeDesc.textContent = 'Kamera OK – wähle Modus.';
     });
     window.addEventListener('arjs-video-error', (e)=>{
       const name = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
@@ -154,35 +179,26 @@
 
       if(mode==='direct'){
         modeTitle.textContent = 'Direkt-AR';
-        modeDesc.textContent  = 'Modell 5 m vor der Kamera, Videohintergrund ist aktiv.';
+        modeDesc.textContent  = 'Modell 5 m vor der Kamera. Videohintergrund aktiv.';
         buildingDirect.setAttribute('visible', true);
         buildingGPS.setAttribute('visible', false);
-
-        // DE: Z-Offset in Direktmodus anwenden (Y = -1 Basis + state.z)
-        const p = buildingDirect.getAttribute('position') || {x:0,y:-1,z:-5};
-        buildingDirect.setAttribute('position', { x:p.x, y:(-1 + state.z), z:p.z });
-        buildingDirect.setAttribute('scale', `${state.scaleDirect} ${state.scaleDirect} ${state.scaleDirect}`);
-
+        applyZ(); // DE: Z-Offset auf Direkt setzen
         gpsInfoBox.classList.add('hidden');
-
       }else{
         modeTitle.textContent = 'GPS-AR';
-        modeDesc.textContent  = 'Modell an GPS-Koordinaten. Videohintergrund ist aktiv.';
+        modeDesc.textContent  = 'Modell an den GPS-Koordinaten. Videohintergrund aktiv.';
         buildingDirect.setAttribute('visible', false);
         buildingGPS.setAttribute('visible', true);
-
-        // DE: Zielkoordinaten + Z-Offset setzen
         buildingGPS.setAttribute('gps-new-entity-place', `latitude: ${state.lat}; longitude: ${state.lon}`);
         buildingGPS.setAttribute('position', `0 ${state.z} 0`);
         buildingGPS.setAttribute('scale', `${state.scaleGPS} ${state.scaleGPS} ${state.scaleGPS}`);
-
         gpsInfoBox.classList.remove('hidden');
         updateGPSDisplay();
         startGPSTracking();
       }
     }
 
-    // DE: Z-Offset Buttons
+    // DE: Z-Offset (Höhe) steuern
     $('#z-up').onclick   = ()=>{ state.z += 0.5; applyZ(); };
     $('#z-down').onclick = ()=>{ state.z -= 0.5; applyZ(); };
     function applyZ(){
@@ -252,18 +268,13 @@
 
     // DE: Modell-Ladefeedback
     [buildingDirect, buildingGPS].forEach(el=>{
-      el.addEventListener('model-loaded', ()=>{
-        statusDot.className='status-indicator status-ready';
-      });
+      el.addEventListener('model-loaded', ()=>{ statusDot.className='status-indicator status-ready'; });
       el.addEventListener('model-error', e=>{
         statusDot.className='status-indicator status-error';
         console.error('GLB Fehler:', e);
         modeDesc.textContent = 'FEHLER: GLB nicht geladen (Pfad/Name prüfen).';
       });
     });
-
-    // DE: Standard – Direktmodus wählen, damit man sofort die Kamera hinter dem Modell sieht
-    switchMode('direct');
   </script>
 </body>
 </html>
