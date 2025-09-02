@@ -3,59 +3,143 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>AR.js – Minimaler HIRO-Test</title>
-  <!-- DE: Bewährte Versionen (iOS-freundlich) -->
+  <title>AR Diagnose – Loader & Marker</title>
+  <!-- DE: Zuerst NUR A-Frame laden (robust) -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
-  <!-- DE: Alternative CDN; falls jsDelivr blockiert ist, nimm UNPKG (unten auskommentiert) -->
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.3.2/aframe/build/aframe-ar.js"></script>
-  <!-- <script src="https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js"></script> -->
+
+  <!-- DE: Wir versuchen AR.js über zwei CDNs. Wenn das erste scheitert, laden wir das zweite. -->
+  <script>
+  // DE: Helper zum Anzeigen von Statusmeldungen
+  function say(t){ var el = document.getElementById('msg'); if(el) el.textContent = 'Status: ' + t; }
+
+  // DE: Versuche zuerst jsDelivr; wenn Fehler → wechsele auf UNPKG
+  function loadARJS(){
+    return new Promise((resolve,reject)=>{
+      const s = document.createElement('script');
+      s.src = "https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.3.2/aframe/build/aframe-ar.js";
+      s.onload = ()=>resolve('jsDelivr OK');
+      s.onerror = ()=>{
+        say('Warnung: jsDelivr für AR.js blockiert – versuche UNPKG …');
+        const s2 = document.createElement('script');
+        s2.src = "https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js";
+        s2.onload = ()=>resolve('UNPKG OK');
+        s2.onerror = ()=>reject(new Error('AR.js konnte über beide CDNs nicht geladen werden.'));
+        document.head.appendChild(s2);
+      };
+      document.head.appendChild(s);
+    });
+  }
+
+  // DE: Prüfe, ob A-Frame da ist
+  window.addEventListener('load', ()=>{
+    if(!window.AFRAME){
+      say('FEHLER: A-Frame wurde nicht geladen (CSP/Netzwerk?).');
+    } else {
+      say('A-Frame geladen. Tippe „A-Frame Test starten“.');
+    }
+  });
+  </script>
+
   <style>
     html,body{margin:0;padding:0;background:#000}
     #msg{position:fixed;top:0;left:0;right:0;padding:8px;background:rgba(0,0,0,.5);
          color:#fff;font:14px/1.3 system-ui;z-index:9;text-align:center}
+    #ui{position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;
+        padding:10px;background:rgba(0,0,0,.45);color:#fff;font:14px/1.3 system-ui;z-index:9}
+    #ui button{padding:8px 10px;border:0;border-radius:8px;background:#fff;color:#000;cursor:pointer}
+    #mount{min-height:100vh}
   </style>
 </head>
 <body>
-<div id="msg">Status: lade… Tippe ins Bild, erlaube Kamera. Halte den HIRO-Marker flach, gut beleuchtet, 30–60 cm Abstand.</div>
+<div id="msg">Status: lade…</div>
+<div id="ui">
+  <!-- DE: Schritt 1 – A-Frame ohne AR (soll IMMER einen Würfel zeigen) -->
+  <button id="btn-aframe">A-Frame Test starten</button>
+  <!-- DE: Schritt 2 – AR.js nachladen und Marker testen -->
+  <button id="btn-ar" disabled>AR.js laden & Marker testen</button>
+</div>
 
-<!-- DE: Minimal-Szene. WICHTIG: a-marker-camera mit preset="hiro" -->
-<a-scene
-  embedded
-  vr-mode-ui="enabled:false"
-  renderer="alpha:true;antialias:false"
-  arjs="sourceType: webcam; facingMode: environment; videoTexture: true; trackingMethod: best; debugUIEnabled: false;">
-  
-  <!-- DE: 1 m Würfel direkt relativ zur Marker-Kamera (immer im Marker-Zentrum) -->
-  <a-box position="0 0.5 0" width="1" height="1" depth="1" color="#8A2BE2"></a-box>
-
-  <!-- DE: Marker-Kamera: ersetzt normale Kamera + Marker-Entity in einem Schritt -->
-  <a-marker-camera preset="hiro" id="mcam"></a-marker-camera>
-</a-scene>
+<!-- DE: Hier wird die jeweilige Szene eingeblendet -->
+<div id="mount"></div>
 
 <script>
-// DE: Statusanzeige
-const $ = (sel)=>document.querySelector(sel);
-const say = (t)=> $('#msg').textContent = 'Status: ' + t;
+// DE: UI-Referenzen
+const mount = document.getElementById('mount');
+const btnAF  = document.getElementById('btn-aframe');
+const btnAR  = document.getElementById('btn-ar');
 
-// DE: Kameradiagnostik
-window.addEventListener('arjs-video-loaded', ()=> say('Kamera OK – Marker wird gesucht…'));
-window.addEventListener('arjs-video-error',  (e)=>{
-  const n = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
-  say('Kamera-FEHLER: ' + n + ' – in iOS Safari Kamera zulassen.');
-});
+// DE: 1) A-Frame OHNE AR – zeigt Box 2 m vor der Kamera (kein AR-Video! Nur 3D Szene)
+btnAF.onclick = ()=>{
+  say('A-Frame Szene ohne AR wird erstellt …');
+  mount.innerHTML = `
+    <a-scene embedded renderer="alpha:true;antialias:true">
+      <!-- DE: Normale 3D-Kamera -->
+      <a-entity camera position="0 1.6 0"></a-entity>
+      <!-- DE: Lila Box 2 m vor der Kamera -->
+      <a-box position="0 1.6 -2" width="1" height="1" depth="1" color="#8A2BE2"></a-box>
+      <!-- DE: Umgebungslicht + Richtung -->
+      <a-entity light="type:ambient;intensity:0.8"></a-entity>
+      <a-entity light="type:directional;intensity:0.6" position="0 5 -5"></a-entity>
+      <!-- DE: Boden zur Orientierung -->
+      <a-plane rotation="-90 0 0" width="20" height="20" color="#333"></a-plane>
+      <a-sky color="#000"></a-sky>
+    </a-scene>
+  `;
+  say('Wenn du JETZT keinen Würfel siehst, rendert A-Frame nicht → Problem im Browser/Device.');
+  // DE: Wenn ok, erlaube Schritt 2
+  btnAR.disabled = false;
+};
 
-// DE: Marker-Events – sagen uns, ob AR.js den HIRO erkennt
-const mcam = document.getElementById('mcam');
-mcam.addEventListener('markerFound', ()=> say('Marker erkannt ✅ – Würfel sollte auf dem HIRO liegen.'));
-mcam.addEventListener('markerLost',  ()=> say('Marker verloren – bitte wieder auf den HIRO zielen.'));
-
-// DE: Falls nach 3s kein Videostream, Hinweis geben
-setTimeout(()=>{
-  const v = document.querySelector('video');
-  if (!v || !v.srcObject) {
-    say('Kamera nicht verbunden. Safari: Einstellungen→Kamera ZULASSEN. Seite neu laden, ins Bild tippen.');
+// DE: 2) AR.js Marker-Test (HIRO). Lädt AR.js NACH User-Geste und erzeugt dann eine Minimal-Szene.
+btnAR.onclick = async ()=>{
+  try{
+    say('Hole Kamerazustimmung …');
+    const s = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:'environment'} }, audio:false });
+    s.getTracks().forEach(t=>t.stop()); // DE: sofort stoppen – AR.js nutzt später eigene Quelle
+  }catch(e){
+    return say('Kamera verweigert: ' + (e && e.message ? e.message : e));
   }
-}, 3000);
+
+  say('Lade AR.js …');
+  try{
+    const info = await loadARJS();
+    say(info + ' – erstelle AR Marker-Szene …');
+  }catch(e){
+    return say('FEHLER: ' + e.message);
+  }
+
+  // DE: Marker-Szene erzeugen
+  mount.innerHTML = `
+    <a-scene
+      embedded
+      vr-mode-ui="enabled:false"
+      renderer="alpha:true;antialias:false"
+      arjs="sourceType: webcam; facingMode: environment; videoTexture: true; trackingMethod: best; debugUIEnabled: false;">
+      <!-- DE: Würfel im Marker-Zentrum (1 m Kanten) -->
+      <a-box position="0 0.5 0" width="1" height="1" depth="1" color="#00FFFF"></a-box>
+      <!-- DE: Marker-Kamera für HIRO -->
+      <a-marker-camera preset="hiro" id="mcam"></a-marker-camera>
+    </a-scene>
+  `;
+
+  // DE: Diagnostik-Events
+  window.addEventListener('arjs-video-loaded', ()=> say('Kamera OK – Marker wird gesucht… (HIRO deutlich, 30–60 cm, gute Beleuchtung)'));
+  window.addEventListener('arjs-video-error',  (e)=>{
+    const n = e && e.detail && e.detail.error ? (e.detail.error.name || e.detail.error.message) : 'unbekannt';
+    say('Kamera-FEHLER: ' + n + ' – in iOS Safari Kamera zulassen.');
+  });
+
+  // DE: Marker-Events
+  setTimeout(()=>{
+    const mcam = document.getElementById('mcam');
+    if(!mcam){
+      say('FEHLER: Marker-Kamera nicht gefunden – AR.js DOM nicht erzeugt (CSP/CDN?).');
+      return;
+    }
+    mcam.addEventListener('markerFound', ()=> say('Marker erkannt ✅ – Würfel sollte auf dem HIRO liegen.'));
+    mcam.addEventListener('markerLost',  ()=> say('Marker verloren – erneut ausrichten.'));
+  }, 100);
+};
 </script>
 </body>
 </html>
