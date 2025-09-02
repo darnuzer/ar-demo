@@ -1,36 +1,134 @@
-<!-- DE: Szene muss transparent sein und AR.js muss die Webcam als Textur verwenden -->
-<a-scene
-  vr-mode-ui="enabled:false"
-  renderer="alpha:true;antialias:true;precision:mediump"
-  arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false"
-  embedded
-  style="width:100vw;height:100vh">
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>AR Building Viewer – Location Based</title>
 
-  <a-assets>
-    <a-asset-item id="buildingModel" src="building.glb"></a-asset-item>
-  </a-assets>
+  <!-- A-Frame + AR.js -->
+  <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
+  <script src="https://unpkg.com/@ar-js-org/ar.js@3.3.2/aframe/build/aframe-ar.js"></script>
 
-  <!-- DE: Nur EINE Kamera – gps-new-camera. Sie liefert das Videobild (Hintergrund). -->
-  <!-- DE: Im Direktmodus hängen wir das Modell als Kind DARUNTER, 5 m vor der Kamera. -->
-  <a-entity id="camRig"
-    gps-new-camera="gpsMinDistance: 5"
-    look-controls-enabled="false"
-    arjs-device-orientation-controls="smoothingFactor: 0.1">
-    <a-entity camera look-controls="enabled:true"></a-entity>
+  <style>
+    html,body{margin:0;height:100%;background:transparent;font-family:Arial,system-ui}
+    #controls{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.8);color:#fff;
+      padding:12px;border-radius:8px;z-index:150;font-size:14px}
+    .mode-btn{display:block;width:100%;margin:6px 0;padding:10px;background:#007bff;color:#fff;border:0;border-radius:6px;cursor:pointer}
+    .mode-btn.active{background:#28a745}
+    #info{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.8);color:#fff;
+      padding:12px;border-radius:8px;z-index:120;font-size:14px;max-width:300px}
+    .status-indicator{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+    .status-ready{background:green}.status-error{background:red}.status-loading{background:orange}
+  </style>
+</head>
+<body>
 
-    <!-- DE: Direktmodus (immer vor der Kamera, Videobild bleibt sichtbar) -->
-    <a-entity id="building-direct"
+  <!-- Steuerung -->
+  <div id="controls">
+    <button class="mode-btn" id="btn-direct">📱 Direkt vor mir</button>
+    <button class="mode-btn" id="btn-gps">🌍 GPS-Koordinaten</button>
+    <button class="mode-btn" id="z-up">Z +0.5 m</button>
+    <button class="mode-btn" id="z-down">Z −0.5 m</button>
+  </div>
+
+  <!-- Info -->
+  <div id="info">
+    <span id="status" class="status-indicator status-loading"></span>
+    <span id="msg">Starte AR…</span>
+  </div>
+
+  <!-- Szene -->
+  <a-scene
+    vr-mode-ui="enabled:false"
+    renderer="alpha:true;antialias:true;precision:mediump"
+    arjs="sourceType: webcam; facingMode: environment; videoTexture: true; debugUIEnabled: false"
+    embedded
+    style="width:100vw;height:100vh">
+
+    <!-- Assets -->
+    <a-assets>
+      <a-asset-item id="buildingModel" src="building.glb"></a-asset-item>
+    </a-assets>
+
+    <!-- Eine Kamera mit Videohintergrund -->
+    <a-entity id="camRig" gps-new-camera="gpsMinDistance: 5">
+      <a-entity camera look-controls="enabled:true"></a-entity>
+
+      <!-- Direktmodus – Modell 5 m vor Kamera -->
+      <a-entity id="building-direct"
+        gltf-model="#buildingModel"
+        position="0 -1 -5"
+        scale="0.5 0.5 0.5"
+        rotation="0 0 0"
+        visible="false">
+      </a-entity>
+    </a-entity>
+
+    <!-- GPS-Modus – Modell an Lat/Lon -->
+    <a-entity id="building-gps"
+      gps-new-entity-place="latitude: 46.8013; longitude: 9.8355"
+      position="0 0 0"
       gltf-model="#buildingModel"
-      position="0 -1 -5"
-      scale="0.5 0.5 0.5"
-      visible="false"></a-entity>
-  </a-entity>
+      scale="8 8 8"
+      rotation="0 0 0"
+      visible="false">
+    </a-entity>
+  </a-scene>
 
-  <!-- DE: GPS-Modus – neue Komponenten nach Doku: gps-new-entity-place -->
-  <a-entity id="building-gps"
-    gps-new-entity-place="latitude: 46.8013; longitude: 9.8355"
-    position="0 0 0"  <!-- DE: Y=Höhen-Offset in Metern -->
-    gltf-model="#buildingModel"
-    scale="8 8 8"
-    visible="false"></a-entity>
-</a-scene>
+  <script>
+    const status = document.getElementById('status');
+    const msg = document.getElementById('msg');
+    const btnDirect = document.getElementById('btn-direct');
+    const btnGps = document.getElementById('btn-gps');
+    const buildingDirect = document.getElementById('building-direct');
+    const buildingGPS = document.getElementById('building-gps');
+    let mode = null, zOffset = 0;
+
+    function switchMode(newMode){
+      mode = newMode;
+      btnDirect.classList.remove('active');
+      btnGps.classList.remove('active');
+      if(mode==='direct'){
+        btnDirect.classList.add('active');
+        buildingDirect.setAttribute('visible',true);
+        buildingGPS.setAttribute('visible',false);
+        msg.textContent='Direktmodus aktiv';
+      }else{
+        btnGps.classList.add('active');
+        buildingDirect.setAttribute('visible',false);
+        buildingGPS.setAttribute('visible',true);
+        msg.textContent='GPS-Modus aktiv';
+      }
+    }
+
+    document.getElementById('btn-direct').onclick = ()=>switchMode('direct');
+    document.getElementById('btn-gps').onclick = ()=>switchMode('gps');
+    document.getElementById('z-up').onclick = ()=>{ zOffset+=0.5; applyZ(); };
+    document.getElementById('z-down').onclick = ()=>{ zOffset-=0.5; applyZ(); };
+
+    function applyZ(){
+      if(mode==='direct'){
+        buildingDirect.setAttribute('position',`0 ${-1+zOffset} -5`);
+      }else if(mode==='gps'){
+        buildingGPS.setAttribute('position',`0 ${zOffset} 0`);
+      }
+      msg.textContent=`Z-Offset: ${zOffset.toFixed(2)} m`;
+    }
+
+    // Events
+    [buildingDirect,buildingGPS].forEach(el=>{
+      el.addEventListener('model-loaded',()=>{
+        status.className='status-indicator status-ready';
+        msg.textContent='Modell geladen';
+      });
+      el.addEventListener('model-error',()=>{
+        status.className='status-indicator status-error';
+        msg.textContent='Fehler beim Laden von building.glb';
+      });
+    });
+
+    // Start mit Direktmodus
+    switchMode('direct');
+  </script>
+</body>
+</html>
